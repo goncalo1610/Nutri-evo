@@ -2419,11 +2419,11 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             name: "Groq", emoji: "⚡", format: "openai",
             url: "https://api.groq.com/openai/v1/chat/completions",
             sttUrl: "https://api.groq.com/openai/v1/audio/transcriptions", sttModel: "whisper-large-v3-turbo",
-            defaultModel: "meta-llama/llama-4-scout-17b-16e-instruct",
-            models: ["meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct", "llama-3.3-70b-versatile"],
+            defaultModel: "qwen/qwen3.6-27b",   // texte + photos (les modèles Llama ont été retirés par Groq en 2026)
+            models: ["qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"],
             keyUrl: "console.groq.com/keys", keyHint: "gsk_...",
             vision: true, audio: true,
-            info: "Gratuit et ultra rapide. Photos ✅ (modèles Llama 4) Vocal ✅"
+            info: "Gratuit et ultra rapide. Photos ✅ (modèle Qwen par défaut) Vocal ✅"
         },
         openrouter: {
             name: "OpenRouter", emoji: "🔀", format: "openai",
@@ -2446,6 +2446,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             if (clean) appData.apiKeys[k] = clean; else delete appData.apiKeys[k];
         });
         if (appData.apiKey) appData.apiKey = sanitizeKey(appData.apiKey);
+        // Modèles retirés par Groq en 2026 → on revient au modèle par défaut
+        if (/^(meta-llama\/llama-4|llama-3\.|llama3-|qwen\/qwen3-32b)/.test(appData.aiModels.groq || '')) delete appData.aiModels.groq;
         if (!appData.aiProvider || !AI_PROVIDERS[appData.aiProvider]) appData.aiProvider = 'gemini';
         if (appData.aiFallback === undefined) appData.aiFallback = true;
         // Si le fournisseur actif n'a pas de clé mais un autre oui → on prend celui-là
@@ -2574,7 +2576,16 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             body: JSON.stringify({ model, messages: [{ role: 'user', content }] })
         });
         data = await readJsonSafe(resp);
-        if (!resp.ok) throw aiHttpError(data, resp, `Erreur serveur ${P.name}`);
+        if (!resp.ok) {
+            const raw = data?.error?.message || data?.message || '';
+            const code = data?.error?.code || '';
+            const modelGone = [400, 404].includes(resp.status) && (/decommissioned|does not exist|not found|no longer supported|deprecated/i.test(raw) || /model_(not_found|decommissioned)/.test(code)) && /model/i.test(raw + code);
+            if (modelGone && model !== P.defaultModel) {
+                console.warn(`[IA] ${P.name} : modèle ${model} retiré → ${P.defaultModel}`);
+                return callProvider._withModel(id, P.defaultModel, prompt, imgs);
+            }
+            throw aiHttpError(data, resp, `Erreur serveur ${P.name}`);
+        }
         const txt = data.choices?.[0]?.message?.content;
         if (!txt) throw new Error("L'IA n'a pas répondu. Réessaie.");
         return typeof txt === 'string' ? txt : txt.map(c => c.text || '').join('');
@@ -2789,7 +2800,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         if (/no longer available|new users|not available to new|limited to users/i.test(m))
             return "Ce modèle n'est plus ouvert aux nouveaux comptes. Vide le champ « Modèle » pour utiliser automatiquement le plus récent.";
         if (status === 404 || /model.*(not found|does not exist)|not supported/i.test(m))
-            return "Modèle introuvable pour cette clé. Vide le champ « Modèle » pour utiliser celui par défaut.";
+            return "Ce modèle n'existe plus chez ce fournisseur (retiré) ou n'est pas accessible avec cette clé. Vide le champ « Modèle » pour utiliser celui par défaut.";
         if (/location is not supported|region/i.test(m))
             return "Ce fournisseur n'est pas disponible dans ton pays/région.";
         if (/Failed to fetch|NetworkError|Load failed/i.test(m))

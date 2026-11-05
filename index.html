@@ -978,6 +978,27 @@
                 <option value="advanced">👨‍🍳 Confirmé — j'aime cuisiner</option>
             </select>
         </div>
+        <div class="profile-section-title">🩺 Suivi médical</div>
+        <div class="card">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:700;cursor:pointer;margin-bottom:6px">
+                <input type="checkbox" id="p-med-enabled" style="width:auto;margin:0" onchange="updateMedUI()">
+                Mes objectifs sont fixés par un médecin / diététicien(ne)
+            </label>
+            <div style="font-size:0.78rem;color:var(--text-muted);line-height:1.4">Active-le si un professionnel de santé t'a donné des apports précis. L'appli utilisera ses valeurs au lieu de son calcul automatique.</div>
+            <div id="p-med-fields" style="display:none;margin-top:12px">
+                <label>Calories par jour (kcal) <span class="profile-hint">valeur prescrite</span></label>
+                <input type="number" id="p-med-cal" placeholder="Ex: 1400" min="600" max="5000" step="10">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                    <div><label>Protéines (g)</label><input type="number" id="p-med-prot" placeholder="auto" min="0" max="400"></div>
+                    <div><label>Glucides (g)</label><input type="number" id="p-med-carb" placeholder="auto" min="0" max="800"></div>
+                    <div><label>Lipides (g)</label><input type="number" id="p-med-fat" placeholder="auto" min="0" max="300"></div>
+                </div>
+                <div style="font-size:0.74rem;color:var(--text-muted);margin:-6px 0 12px">Laisse « auto » si seules les calories t'ont été données : l'appli répartit le reste.</div>
+                <label>Consignes à respecter <span class="profile-hint">l'IA en tiendra compte partout</span></label>
+                <textarea id="p-med-notes" rows="3" style="resize:none" placeholder="Ex: limiter le sel, pas de sucres rapides, éviter les aliments riches en potassium..."></textarea>
+                <div style="font-size:0.74rem;color:var(--text-muted);line-height:1.4">ℹ️ Pas besoin d'écrire le nom de la maladie : indique seulement ce qu'il faut faire ou éviter. L'appli ne remplace pas l'avis de ton médecin.</div>
+            </div>
+        </div>
         <div class="profile-section-title">🤖 Contexte pour l'IA</div>
         <div class="card">
             <label>Décris ton quotidien</label>
@@ -1736,6 +1757,7 @@
                             if (el && val !== undefined && val !== null) el.value = val;
                         });
                         if (p.morph && typeof selectMorph === 'function') selectMorph(p.morph);
+                        if (typeof fillMedFields === 'function') fillMedFields(p.medical);
                         if (typeof updateGoalUI === 'function') updateGoalUI();
                         if (document.getElementById('home-user-name')) {
                             document.getElementById('home-user-name').textContent = p.name || '';
@@ -2062,6 +2084,7 @@
             if (p.stress) document.getElementById('p-stress').value = p.stress;
             if (p.diet) document.getElementById('p-diet').value = p.diet;
             if (p.allergies) document.getElementById('p-allergies').value = p.allergies;
+            fillMedFields(p.medical);
             if (p.cooking) document.getElementById('p-cooking').value = p.cooking;
             updateGoalUI();
             renderWeek(); renderHomeData(); renderShortcuts(); renderWeightChart();
@@ -2174,6 +2197,35 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         box.innerHTML = `<div>${isLoss?'📉':'📈'} Écart : <span class="gcb-val">${diff>0?'+':''}${diff.toFixed(1)} kg</span> en ${weeks} semaines</div><div>Ajustement : <span class="gcb-val">${isLoss?'':'+'}${dailyDelta} kcal/jour</span></div>${warn}`;
     }
 
+    // ===== SUIVI MÉDICAL =====
+    function updateMedUI() {
+        const on = document.getElementById('p-med-enabled').checked;
+        document.getElementById('p-med-fields').style.display = on ? 'block' : 'none';
+    }
+
+    function fillMedFields(m) {
+        m = m || {};
+        document.getElementById('p-med-enabled').checked = !!m.enabled;
+        document.getElementById('p-med-cal').value = m.cal || '';
+        document.getElementById('p-med-prot').value = m.prot ?? '';
+        document.getElementById('p-med-carb').value = m.carb ?? '';
+        document.getElementById('p-med-fat').value = m.fat ?? '';
+        document.getElementById('p-med-notes').value = m.notes || '';
+        updateMedUI();
+    }
+
+    // Texte ajouté aux demandes envoyées à l'IA
+    function getMedicalPromptBlock() {
+        const m = appData.profile?.medical;
+        if (!m || !m.enabled) return '';
+        const parts = [];
+        if (m.cal) parts.push(`apport maximum ${m.cal} kcal/jour fixé par un professionnel de santé`);
+        if (m.prot != null) parts.push(`protéines ${m.prot} g/j`);
+        if (m.carb != null) parts.push(`glucides ${m.carb} g/j`);
+        if (m.fat != null) parts.push(`lipides ${m.fat} g/j`);
+        return `\n[CONSIGNES MÉDICALES PRIORITAIRES — fixées par un professionnel de santé] ${parts.join(', ')}${parts.length ? '.' : ''}${m.notes ? ` Consignes : ${m.notes}.` : ''} Respecte-les strictement : ne propose jamais de dépasser ces apports ni d'aller contre ces consignes, même si les calculs habituels (morphologie, sport) suggèrent autre chose. En cas de doute, conseille d'en parler au médecin.\n`;
+    }
+
     function saveProfile() {
         const name = document.getElementById('p-name').value.trim();
         const weight = parseFloat(document.getElementById('p-weight').value);
@@ -2193,11 +2245,25 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const diet = document.getElementById('p-diet').value;
         const allergies = document.getElementById('p-allergies').value.trim();
         const cooking = document.getElementById('p-cooking').value;
+        const numOrNull = id => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? null : Math.round(v); };
+        const medical = {
+            enabled: document.getElementById('p-med-enabled').checked,
+            cal: numOrNull('p-med-cal'), prot: numOrNull('p-med-prot'),
+            carb: numOrNull('p-med-carb'), fat: numOrNull('p-med-fat'),
+            notes: document.getElementById('p-med-notes').value.trim()
+        };
 
         if (!name) return showAlert("Prénom manquant","Entre ton prénom pour continuer.");
         if (isNaN(weight)||weight<30||weight>300) return showAlert("Poids invalide","Entre un poids entre 30 et 300 kg.");
         if (isNaN(height)||height<100||height>250) return showAlert("Taille invalide","Entre une taille entre 100 et 250 cm.");
         if (isNaN(age)||age<10||age>100) return showAlert("Âge invalide","Entre un âge entre 10 et 100 ans.");
+        if (medical.enabled) {
+            if (medical.cal !== null && (medical.cal < 600 || medical.cal > 5000)) return showAlert("Calories invalides", "Entre une valeur entre 600 et 5000 kcal, telle que prescrite.");
+            if (medical.cal === null && medical.prot === null && medical.carb === null && medical.fat === null && !medical.notes)
+                return showAlert("Suivi médical vide", "Indique au moins les calories ou une consigne, ou décoche le suivi médical.");
+            const macroCal = (medical.prot||0)*4 + (medical.carb||0)*4 + (medical.fat||0)*9;
+            if (medical.cal && macroCal > medical.cal * 1.05) return showAlert("Valeurs incohérentes", `Les macros indiquées font déjà ${macroCal} kcal, plus que les ${medical.cal} kcal prescrites. Vérifie les chiffres.`);
+        }
 
         // BMR — Katch-McArdle (basée sur la masse maigre) si %MG renseigné = +5-10% de précision.
         // Sinon Mifflin-St Jeor (référence quand la composition corporelle est inconnue).
@@ -2231,7 +2297,9 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
                 ? Math.min(maxSurplus, Math.round(((weightTarget-weight)*7700)/(goalWeeks*7)))
                 : Math.min(maxSurplus, 400);
         }
-        const calTarget = tdee + goalDelta;
+        let calTarget = tdee + goalDelta;
+        const medOn = medical.enabled && medical.cal;
+        if (medOn) calTarget = medical.cal;   // la prescription remplace le calcul automatique
 
         const protMultMap = {ecto:1.8, meso:2.0, endo:2.2};
         const protMult = protMultMap[morph] || 2.0;
@@ -2244,7 +2312,14 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const calFromProt = protTarget * 4;
         const calFromFat  = fatTarget * 9;
         const calRemaining = calTarget - calFromProt - calFromFat;
-        const carbTarget = Math.max(80, Math.round(calRemaining / 4));
+        let carbTarget = Math.max(80, Math.round(calRemaining / 4));
+        let protFinal = protTarget, fatFinal = fatTarget;
+        if (medical.enabled && (medOn || medical.prot !== null || medical.carb !== null || medical.fat !== null)) {
+            // Valeurs prescrites en priorité ; le reste est réparti sans dépasser les calories prescrites
+            protFinal = medical.prot ?? (medOn ? Math.min(protTarget, Math.round(calTarget * 0.30 / 4)) : protTarget);
+            fatFinal  = medical.fat  ?? (medOn ? Math.min(fatTarget,  Math.round(calTarget * 0.30 / 9)) : fatTarget);
+            carbTarget = medical.carb ?? Math.max(0, Math.round((calTarget - protFinal*4 - fatFinal*9) / 4));
+        }
 
         const mealSplitsMap = {
             2: { 'Petit Déjeuner': 0.40, 'Déjeuner': 0.60, 'Dîner': 0.00, 'Collation': 0.00 },
@@ -2260,7 +2335,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             goalDir, weightTarget, goalWeeks, goalDelta,
             mealFreq: safeMealFreq,
             sleep: null, stress, diet, allergies, cooking,
-            targets: { cal: calTarget, prot: protTarget, fat: fatTarget, carb: carbTarget, fiber: 25 },
+            medical,
+            targets: { cal: calTarget, prot: protFinal, fat: fatFinal, carb: carbTarget, fiber: 25 },
             mealSplit: mealSplit,
             bmr: Math.round(bmr),
             tdeeBase: tdee
@@ -2273,7 +2349,11 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         if (document.getElementById('home-user-name')) document.getElementById('home-user-name').textContent = name;
         renderWeek(); renderHomeData(); renderShortcuts();
 
-        showToast(`🎯 ${calTarget} kcal | P:${protTarget}g G:${carbTarget}g L:${fatTarget}g`);
+        showToast(`🎯 ${calTarget} kcal | P:${protFinal}g G:${carbTarget}g L:${fatFinal}g${medOn ? ' 🩺' : ''}`);
+        const lowLimit = sex === 'male' ? 1500 : 1200;
+        if (medOn && calTarget < lowLimit) {
+            setTimeout(() => showAlert("🩺 Objectif très bas", `${calTarget} kcal/jour, c'est en dessous des apports habituels (${lowLimit} kcal). C'est enregistré tel quel, car c'est une prescription — à suivre uniquement sous contrôle médical.`), 600);
+        }
         showSection('view-home');
     }
 
@@ -2579,7 +2659,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
     // Garde le même nom qu'avant → toutes les fonctions existantes marchent sans changement
     async function callGemini(prompt, isJson = false, imagesBase64 = []) {
         if (!hasAIKey()) { showAlert("Clé API manquante", "Va dans ⚙️ Réglages et entre une clé API (Gemini, OpenAI, Claude, Mistral, Groq…)."); return null; }
-        const fullPrompt = isJson ? prompt + " Réponds UNIQUEMENT en JSON valide, sans texte avant ni après, sans balises markdown." : prompt;
+        const withMed = getMedicalPromptBlock() + prompt;
+        const fullPrompt = isJson ? withMed + " Réponds UNIQUEMENT en JSON valide, sans texte avant ni après, sans balises markdown." : withMed;
         try {
             const text = await callAIWithFallback(fullPrompt, imagesBase64);
             return isJson ? parseAIJson(text) : text;
@@ -3323,7 +3404,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
             const goalLabels={loss:'Perte de poids',maintain:'Maintien',gain:'Prise de masse'};
             const morphLabels={ecto:'Ectomorphe',meso:'Mésomorphe',endo:'Endomorphe'};
             const chips=[];
-            if(p.targets?.cal)chips.push(`🔥 ${p.targets.cal} kcal/j`);
+            if(p.targets?.cal)chips.push(`🔥 ${p.targets.cal} kcal/j${p.medical?.enabled&&p.medical?.cal?' 🩺':''}`);
             if(p.goalDir)chips.push(goalLabels[p.goalDir]||'');
             if(p.weightTarget)chips.push(`🎯 ${p.weightTarget} kg`);
             if(p.morph)chips.push(morphLabels[p.morph]||'');
@@ -4605,7 +4686,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
 - Objectif: ${goalLabels[p.goalDir] || p.goalDir}${p.weightTarget ? ` → cible ${p.weightTarget}kg en ${p.goalWeeks} sem.` : ''}
 - Cibles: ${p.targets?.cal} kcal/j | P:${p.targets?.prot}g | G:${p.targets?.carb}g | L:${p.targets?.fat}g
 - Activité déclarée: ${parseFloat(p.activity) >= 1.725 ? 'très actif' : parseFloat(p.activity) >= 1.55 ? 'modérément actif' : parseFloat(p.activity) >= 1.375 ? 'légèrement actif' : 'sédentaire'}
-- Stress: ${p.stress || 'modéré'} | Régime: ${p.diet && p.diet !== 'none' ? p.diet : 'aucun'}${p.allergies ? ` | Allergies: ${p.allergies}` : ''}${p.lifestyle ? `\n- Mode de vie: ${p.lifestyle}` : ''}
+- Stress: ${p.stress || 'modéré'} | Régime: ${p.diet && p.diet !== 'none' ? p.diet : 'aucun'}${p.allergies ? ` | Allergies: ${p.allergies}` : ''}${getMedicalPromptBlock()}${p.lifestyle ? `\n- Mode de vie: ${p.lifestyle}` : ''}
 ${weightTrend ? `- ${weightTrend}` : ''}
 
 DONNÉES 7 DERNIERS JOURS :

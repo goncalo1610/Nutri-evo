@@ -1291,6 +1291,10 @@
                 <div class="section-title" style="margin-top:0">Déjà enregistrés aujourd'hui</div>
                 <div id="existing-meals-list"></div>
             </div>
+            <div id="meal-favs-box">
+                <label>⭐ Mes favoris <span style="font-weight:600;text-transform:none;font-size:0.75rem;color:var(--text-muted)">(un appui = ajouté, sans IA)</span></label>
+                <div class="shortcuts-container" id="meal-favorites"></div>
+            </div>
             <label>Photos du repas <span style="font-weight:600;text-transform:none;font-size:0.75rem;color:var(--primary)">(jusqu'à 4)</span></label>
             <div style="display:flex;gap:10px;margin-bottom:6px;flex-shrink:0">
                 <div class="add-photo-btn" onclick="triggerImportMulti('camera')"><span>📸</span>Photo</div>
@@ -1365,8 +1369,10 @@
                     <button onclick="saveMeal()" style="background:var(--success)">✅ Valider</button>
                     <button class="outline" onclick="cancelPreview('m-preview')">Annuler</button>
                 </div>
+                <button class="outline" onclick="saveMealAsFavorite()" style="margin-top:8px;padding:9px;font-size:0.85rem">⭐ Enregistrer en favori</button>
             </div>
             <button class="gemini-btn" onclick="estimateMeal()" id="btn-analyze-meal">🔍 Analyser avec l'IA</button>
+            <button class="outline" onclick="openManualMeal()" id="btn-manual-meal" style="margin-top:8px;padding:9px;font-size:0.85rem">✏️ Saisir les valeurs moi-même (étiquette, valeurs connues)</button>
         </div>
     </div>
 
@@ -3199,14 +3205,100 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         cancelPreview('m-preview');
         document.getElementById('loader-m').style.display='none';
         document.getElementById('btn-analyze-meal').style.display='flex';
+        renderMealFavorites();
+        resetMealEdit();
         showSection('view-meal-form');
+    }
+
+    // ===== CORRECTIONS MANUELLES : on retient ce que l'utilisateur a modifié =====
+    function resetMealEdit(){ window._mealEdit = {kcal:false, macros:false}; }
+    (function bindMealEditTracking(){
+        const bind = () => {
+            const k = document.getElementById('m-kcal-val'); if (!k || k._bound) return;
+            k._bound = true;
+            k.addEventListener('input', () => { (window._mealEdit = window._mealEdit || {}).kcal = true; });
+            ['m-prot-val','m-carb-val','m-fat-val'].forEach(id => document.getElementById(id)
+                .addEventListener('input', () => { (window._mealEdit = window._mealEdit || {}).macros = true; }));
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind); else bind();
+    })();
+
+    // ===== REPAS FAVORIS =====
+    function escHtml(t){return String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+    function renderMealFavorites(){
+        const c=document.getElementById('meal-favorites'); if(!c) return;
+        const favs=appData.mealFavorites||[];
+        if(!favs.length){
+            c.innerHTML='<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic">Aucun favori — après une analyse ou une saisie, appuie sur ⭐ Enregistrer en favori</div>';
+            return;
+        }
+        c.innerHTML=favs.map((f,i)=>`<div class="shortcut-item" onclick="addFavoriteMeal(${i})">${escHtml(f.name)} · ${f.kcal} kcal <span class="remove" onclick="event.stopPropagation();deleteMealFavorite(${i})">×</span></div>`).join('');
+    }
+
+    function addFavoriteMeal(i){
+        const f=(appData.mealFavorites||[])[i]; if(!f) return;
+        if(!appData.days[selectedDate]) appData.days[selectedDate]={meals:[],sport:0,sportEntries:[],closed:false};
+        appData.days[selectedDate].meals.push({
+            type: activeCategory, desc: f.name,
+            kcal: f.kcal, prot: f.prot, carb: f.carb, fat: f.fat, fiber: f.fiber||0,
+            healthScore: f.healthScore||2, healthLabel: f.healthLabel||'', healthTips: '',
+            fromFavorite: true
+        });
+        saveData(); renderHomeData(); renderMealCategories();
+        openMealForm(activeCategory);   // rafraîchit la liste "déjà enregistrés"
+        showToast(`⭐ ${f.name} ajouté — ${f.kcal} kcal · P:${f.prot}g G:${f.carb}g L:${f.fat}g`);
+    }
+
+    function deleteMealFavorite(i){
+        const f=(appData.mealFavorites||[])[i]; if(!f) return;
+        if(window._favDeleteConfirm!==i){
+            window._favDeleteConfirm=i; setTimeout(()=>{window._favDeleteConfirm=null;},3000);
+            return showToast(`Appuie encore sur × pour supprimer « ${f.name} »`);
+        }
+        window._favDeleteConfirm=null;
+        appData.mealFavorites.splice(i,1); saveData(); renderMealFavorites();
+        showToast('Favori supprimé 🗑️');
+    }
+
+    function readMealFormValues(){
+        const v=id=>Math.round(parseFloat(document.getElementById(id)?.value)||0);
+        return {kcal:v('m-kcal-val'),prot:v('m-prot-val'),carb:v('m-carb-val'),fat:v('m-fat-val'),fiber:v('m-fiber-val')};
+    }
+
+    function saveMealAsFavorite(){
+        const vals=readMealFormValues();
+        if(!vals.kcal && !vals.prot && !vals.carb && !vals.fat) return showAlert("Valeurs manquantes","Remplis au moins les calories avant d'enregistrer le favori.");
+        const desc=document.getElementById('m-desc').value.trim();
+        const name=(prompt("Nom du favori (ex : Yaourt nature 125 g)", desc.slice(0,40))||'').trim();
+        if(!name) return;
+        if(!appData.mealFavorites) appData.mealFavorites=[];
+        const existing=appData.mealFavorites.findIndex(f=>f.name.toLowerCase()===name.toLowerCase());
+        const fav={name:name.slice(0,40),...vals,healthScore:appData.lastMacros?.healthScore||2,healthLabel:appData.lastMacros?.healthLabel||''};
+        if(existing>=0) appData.mealFavorites[existing]=fav; else appData.mealFavorites.push(fav);
+        saveData(); renderMealFavorites();
+        showToast(existing>=0?`⭐ Favori « ${fav.name} » mis à jour`:`⭐ « ${fav.name} » ajouté aux favoris`);
+    }
+
+    // Saisie directe des valeurs, sans IA (étiquette nutritionnelle, aliment connu)
+    function openManualMeal(){
+        ['m-kcal-val','m-prot-val','m-carb-val','m-fat-val','m-fiber-val'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+        const pa=document.getElementById('portion-adjuster'); if(pa) pa.style.display='none';
+        window._mealBaseline=null; appData.lastMacros=null; resetMealEdit();
+        document.getElementById('meal-health-emoji').textContent='✏️';
+        document.getElementById('meal-health-label').textContent='Saisie manuelle';
+        ['meal-coach-comment','meal-health-tips'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';});
+        document.getElementById('m-preview').style.display='block';
+        document.getElementById('btn-analyze-meal').style.display='none';
+        document.getElementById('btn-manual-meal').style.display='none';
+        setTimeout(()=>document.getElementById('m-kcal-val').focus(),100);
     }
 
     async function estimateMeal(){
         const desc=document.getElementById('m-desc').value.trim();
         if(!desc&&!currentImgs.length)return showAlert("Info","Ajoute une description ou une photo de ton repas.");
         document.getElementById('loader-m').style.display='block';
-        document.getElementById('btn-analyze-meal').style.display='none';
+        document.getElementById('btn-analyze-meal').style.display='none';const _bm=document.getElementById('btn-manual-meal');if(_bm)_bm.style.display='none';
         document.getElementById('m-preview').style.display='none';
 
         const profile=appData.profile;
@@ -3272,6 +3364,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
             document.getElementById('m-fat-val').value  = fat;
             const fiberInput = document.getElementById('m-fiber-val');
             if (fiberInput) fiberInput.value = Math.round(res.fiber || 0);
+            resetMealEdit();
             // Affiche et reset le slider de portion
             const portionAdj = document.getElementById('portion-adjuster');
             if (portionAdj) {
@@ -3314,22 +3407,31 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
         if(!appData.days[selectedDate]) appData.days[selectedDate]={meals:[],sport:0,sportEntries:[],closed:false};
 
         const kcal  = Math.round(parseFloat(document.getElementById('m-kcal-val').value)  || 0);
-        const prot  = Math.round(parseFloat(document.getElementById('m-prot-val').value)  || 0);
-        const carb  = Math.round(parseFloat(document.getElementById('m-carb-val').value)  || 0);
-        const fat   = Math.round(parseFloat(document.getElementById('m-fat-val').value)   || 0);
+        let prot    = Math.round(parseFloat(document.getElementById('m-prot-val').value)  || 0);
+        let carb    = Math.round(parseFloat(document.getElementById('m-carb-val').value)  || 0);
+        let fat     = Math.round(parseFloat(document.getElementById('m-fat-val').value)   || 0);
         const fiber = Math.round(parseFloat(document.getElementById('m-fiber-val')?.value) || 0);
 
         const calFromMacros = (prot * 4) + (carb * 4) + (fat * 9);
         let finalKcal = kcal;
-        if (kcal > 0 && Math.abs(kcal - calFromMacros) / kcal > 0.20 && Math.abs(kcal - calFromMacros) > 50) {
-            finalKcal = calFromMacros > 0 ? calFromMacros : kcal;
-            showToast(`⚠️ Calories recalculées : ${finalKcal} kcal`);
+        const ed = window._mealEdit || {};
+        const mismatch = kcal > 0 && calFromMacros > 0 && Math.abs(kcal - calFromMacros) / kcal > 0.20 && Math.abs(kcal - calFromMacros) > 50;
+        if (mismatch && ed.kcal && !ed.macros) {
+            // L'utilisateur a corrigé les calories → on garde SA valeur et on ajuste les macros dans la même proportion
+            const r = kcal / calFromMacros;
+            prot = Math.round(prot * r); carb = Math.round(carb * r); fat = Math.round(fat * r);
+            showToast(`✏️ Tes ${kcal} kcal sont gardées — macros ajustées en proportion`);
+        } else if (mismatch && !ed.kcal) {
+            // Macros modifiées (ou valeurs IA incohérentes) → calories recalculées depuis les macros
+            finalKcal = calFromMacros;
+            showToast(`⚠️ Calories recalculées depuis les macros : ${finalKcal} kcal`);
         }
+        // Calories ET macros modifiées à la main → on garde exactement ce qui a été saisi
 
         const meal = {
             type: activeCategory,
             desc: document.getElementById('m-desc').value.trim(),
-            kcal: finalKcal, prot, carb, fat,
+            kcal: finalKcal, prot, carb, fat, fiber,
             healthScore: appData.lastMacros?.healthScore || 2,
             healthLabel: appData.lastMacros?.healthLabel || '',
             healthTips:  appData.lastMacros?.healthTips  || ''
@@ -3380,6 +3482,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
         document.getElementById(id).style.display='none';
         if(id==='m-preview'){
             document.getElementById('btn-analyze-meal').style.display='flex';
+            const bm=document.getElementById('btn-manual-meal'); if(bm) bm.style.display='block';
             const pa = document.getElementById('portion-adjuster');
             if (pa) pa.style.display = 'none';
             window._mealBaseline = null;
@@ -3396,6 +3499,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
         document.getElementById('m-prot-val').value = Math.round(base.prot * mult);
         document.getElementById('m-carb-val').value = Math.round(base.carb * mult);
         document.getElementById('m-fat-val').value  = Math.round(base.fat  * mult);
+        resetMealEdit();
         document.querySelectorAll('.portion-btn').forEach(b => {
             b.classList.toggle('active', parseFloat(b.dataset.mult) === mult);
         });

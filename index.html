@@ -1476,7 +1476,7 @@
             <h3>🤖 Intelligence artificielle</h3>
             <p style="font-size:0.82rem;color:var(--text-muted);margin-top:0">Choisis l'IA utilisée par l'app (repas, sport, recettes, coach Alex). Tu peux enregistrer une clé pour chaque fournisseur.</p>
             <div id="ai-provider-badges" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px"></div>
-            <label>Fournisseur actif</label>
+            <label>Fournisseur à configurer</label>
             <select id="ai-provider-sel" onchange="onAIProviderChange()"></select>
             <div id="ai-provider-info" style="font-size:0.78rem;color:var(--text-muted);margin:6px 0 10px;line-height:1.4"></div>
             <label>Clé API</label>
@@ -1500,7 +1500,14 @@
                 <button onclick="saveApiKey()" style="flex:2">Enregistrer 🔑</button>
                 <button class="outline" onclick="testApiKey()" style="flex:1">Tester</button>
             </div>
-            <button class="outline" onclick="deleteApiKey()" style="margin-top:8px;padding:8px;font-size:0.8rem">🗑️ Supprimer la clé de ce fournisseur</button>
+            <button class="outline" onclick="addBackupKey()" style="margin-top:8px;padding:8px;font-size:0.8rem">➕ Ajouter comme clé de secours</button>
+            <div id="ai-backup-info" style="font-size:0.74rem;color:var(--text-muted);font-weight:700;margin-top:4px;text-align:center"></div>
+            <button class="outline" onclick="deleteApiKey()" style="margin-top:8px;padding:8px;font-size:0.8rem">🗑️ Supprimer la clé principale de ce fournisseur</button>
+        </div>
+        <div class="card">
+            <h3>🔢 Ordre de priorité</h3>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0;line-height:1.4">L'IA n°1 est utilisée en premier. Si elle échoue (quota, saturation, clé refusée), l'appli essaie ses clés de secours, puis l'IA suivante, et ainsi de suite. Nécessite « Basculer sur une autre IA si erreur ».</p>
+            <div id="ai-priority-list"></div>
         </div>
         <div class="card">
             <button class="outline" onclick="showSection('view-profile')">👤 Modifier mon profil</button>
@@ -1740,7 +1747,7 @@
                 const cloudData = docSnap.data();
                 if (typeof appData !== 'undefined') {
                     const localNewer = (appData.keysUpdatedAt || 0) > (cloudData.keysUpdatedAt || 0);
-                    const localKeys = { apiKeys: appData.apiKeys, aiModels: appData.aiModels, aiProvider: appData.aiProvider, apiKey: appData.apiKey, keysUpdatedAt: appData.keysUpdatedAt };
+                    const localKeys = { apiKeys: appData.apiKeys, apiKeyBackups: appData.apiKeyBackups, aiOrder: appData.aiOrder, aiModels: appData.aiModels, aiProvider: appData.aiProvider, apiKey: appData.apiKey, keysUpdatedAt: appData.keysUpdatedAt };
                     Object.assign(appData, cloudData);
                     if (localNewer) {
                         Object.assign(appData, localKeys);
@@ -1811,9 +1818,10 @@
             // Remplace entièrement ces champs (sinon une clé ou un modèle supprimé revient du cloud)
             await setDoc(ref, {
                 apiKeys: dataToSave.apiKeys || {}, aiModels: dataToSave.aiModels || {},
+                apiKeyBackups: dataToSave.apiKeyBackups || {}, aiOrder: dataToSave.aiOrder || [],
                 aiProvider: dataToSave.aiProvider || 'gemini', apiKey: dataToSave.apiKey || '',
                 keysUpdatedAt: dataToSave.keysUpdatedAt || 0
-            }, { mergeFields: ['apiKeys', 'aiModels', 'aiProvider', 'apiKey', 'keysUpdatedAt'] });
+            }, { mergeFields: ['apiKeys', 'aiModels', 'apiKeyBackups', 'aiOrder', 'aiProvider', 'apiKey', 'keysUpdatedAt'] });
             setCloudStatus('synced');
         } catch(e) {
             setCloudStatus('offline');
@@ -1879,7 +1887,7 @@
         for (let i = 6; i >= 0; i--) {
             const d = new Date(today);
             d.setDate(today.getDate() - i);
-            const ds = d.toISOString().split('T')[0];
+            const ds = dateKey(d);
             const day = appData.days[ds] || {};
             const entries = day.sportEntries || [];
 
@@ -2033,7 +2041,12 @@
         });
     }
 
-    function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+    // Date du jour à l'heure de Paris/Genève (avant : heure UTC → un repas noté entre minuit et 1-2 h comptait pour la veille)
+    function dateKey(d) {   // → "AAAA-MM-JJ" à l'heure de Paris
+        dateKey._f = dateKey._f || new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' });
+        return dateKey._f.format(d instanceof Date ? d : new Date(d));
+    }
+    function getTodayStr() { return dateKey(new Date()); }
 
     document.addEventListener('DOMContentLoaded', () => {
         if (window._splashTimeout) { clearTimeout(window._splashTimeout); window._splashTimeout = null; }
@@ -2369,7 +2382,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const today=new Date();
         for(let i=6;i>=0;i--){
             const d=new Date(today); d.setDate(today.getDate()-i);
-            const ds=d.toISOString().split('T')[0];
+            const ds=dateKey(d);
             const hasData=appData.days[ds]&&appData.days[ds].meals.length>0;
             const div=document.createElement('div');
             div.className='week-card'+(ds===selectedDate?' active-day-card':'');
@@ -2390,14 +2403,15 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             models: ["gemini-flash-latest", "gemini-flash-lite-latest"], // complétée avec les modèles dispo pour la clé
             keyUrl: "aistudio.google.com", keyHint: "AQ.… ou AIza…",
             vision: true, audio: true,
-            info: "Gratuit avec quota généreux. Photos ✅ Vocal ✅"
+            info: "Gratuit mais quota limité (≈20/jour sur Flash, ≈500/jour sur Flash-Lite). Photos ✅ Vocal ✅"
         },
         openai: {
             name: "OpenAI (ChatGPT)", emoji: "🟢", format: "openai",
             url: "https://api.openai.com/v1/chat/completions",
             sttUrl: "https://api.openai.com/v1/audio/transcriptions", sttModel: "whisper-1",
-            defaultModel: "gpt-4o-mini",
-            models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-5-mini"],
+            defaultModel: "gpt-6-luna",   // modèle économique actuel (photos ✅) — gpt-4o-mini est en fin de vie
+            backupModels: ["gpt-5-mini", "gpt-4o-mini"],   // essayés si la clé n'a pas accès au modèle par défaut
+            models: ["gpt-6-luna", "gpt-5-mini", "gpt-4o-mini", "gpt-4o"],
             keyUrl: "platform.openai.com/api-keys", keyHint: "sk-...",
             vision: true, audio: true,
             info: "Payant à l'usage. Très bon en photo. Photos ✅ Vocal ✅"
@@ -2427,7 +2441,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             sttUrl: "https://api.groq.com/openai/v1/audio/transcriptions", sttModel: "whisper-large-v3-turbo",
             maxImages: 3,
             defaultModel: "qwen/qwen3.6-27b",   // texte + photos (les modèles Llama ont été retirés par Groq en 2026)
-            models: ["qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"],
+            models: ["qwen/qwen3.6-27b", "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"],
             keyUrl: "console.groq.com/keys", keyHint: "gsk_...",
             vision: true, audio: true,
             info: "Gratuit et ultra rapide. Photos ✅ (modèle Qwen par défaut) Vocal ✅"
@@ -2455,6 +2469,15 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         if (appData.apiKey) appData.apiKey = sanitizeKey(appData.apiKey);
         // Modèles retirés par Groq en 2026 → on revient au modèle par défaut
         if (/^(meta-llama\/llama-4|llama-3\.|llama3-|qwen\/qwen3-32b)/.test(appData.aiModels.groq || '')) delete appData.aiModels.groq;
+        if (/^(gpt-3\.5|gpt-4-|gpt-4$|gpt-4-turbo|o1|o3-mini|o4-mini)/.test(appData.aiModels.openai || '')) delete appData.aiModels.openai;
+        if (!appData.apiKeyBackups || typeof appData.apiKeyBackups !== 'object') appData.apiKeyBackups = {};
+        Object.keys(appData.apiKeyBackups).forEach(id => {
+            const main = appData.apiKeys[id];
+            const list = [...new Set((appData.apiKeyBackups[id] || []).map(sanitizeKey).filter(k => k && k !== main))];
+            if (!AI_PROVIDERS[id] || !list.length) delete appData.apiKeyBackups[id]; else appData.apiKeyBackups[id] = list;
+            if (!appData.apiKeys[id] && list.length) { appData.apiKeys[id] = list.shift(); if (list.length) appData.apiKeyBackups[id] = list; else delete appData.apiKeyBackups[id]; }
+        });
+        if (!Array.isArray(appData.aiOrder)) appData.aiOrder = [];
         if (!appData.aiProvider || !AI_PROVIDERS[appData.aiProvider]) appData.aiProvider = 'gemini';
         if (appData.aiFallback === undefined) appData.aiFallback = true;
         // Si le fournisseur actif n'a pas de clé mais un autre oui → on prend celui-là
@@ -2462,6 +2485,38 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             const other = Object.keys(AI_PROVIDERS).find(k => appData.apiKeys[k]);
             if (other) appData.aiProvider = other;
         }
+    }
+
+    // Ordre de priorité des fournisseurs qui ont une clé (le 1er = fournisseur principal)
+    function getPriorityOrder() {
+        const withKey = Object.keys(AI_PROVIDERS).filter(id => appData.apiKeys[id]);
+        const saved = (appData.aiOrder || []).filter(id => withKey.includes(id));
+        const rest = withKey.filter(id => !saved.includes(id));
+        let order = [...saved, ...rest];
+        if (appData.aiProvider && order.includes(appData.aiProvider)) order = [appData.aiProvider, ...order.filter(i => i !== appData.aiProvider)];
+        return order;
+    }
+    // Toutes les clés d'un fournisseur : principale puis secours
+    function getProviderKeys(id) {
+        return [appData.apiKeys[id], ...((appData.apiKeyBackups || {})[id] || [])].filter(Boolean);
+    }
+    // Appelle un fournisseur en essayant ses clés une par une
+    async function callProviderAllKeys(id, prompt, imgs) {
+        const keys = getProviderKeys(id);
+        const ko = (callProvider._keyOverride = callProvider._keyOverride || {});
+        let lastErr = null;
+        for (let k = 0; k < keys.length; k++) {
+            ko[id] = keys[k];
+            try {
+                const txt = await callProvider(id, prompt, imgs);
+                if (k > 0) showToast(`🔑 ${AI_PROVIDERS[id].name} : clé de secours n°${k} utilisée`);
+                return txt;
+            } catch (e) {
+                lastErr = e;
+                if (e.status === 413 || /trop lourde/i.test(e.message)) break;   // une autre clé n'y changera rien
+            } finally { delete ko[id]; }
+        }
+        throw lastErr;
     }
 
     function hasAIKey() {
@@ -2478,10 +2533,11 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         migrateAIKeys();
         const ok = id => appData.apiKeys[id] && (!needs.vision || AI_PROVIDERS[id].vision) && (!needs.audio || AI_PROVIDERS[id].audio)
             && (!needs.imgCount || !AI_PROVIDERS[id].maxImages || needs.imgCount <= AI_PROVIDERS[id].maxImages);
+        const full = getPriorityOrder();
         const order = [];
         if (ok(appData.aiProvider)) order.push(appData.aiProvider);
         if (appData.aiFallback || order.length === 0) {
-            Object.keys(AI_PROVIDERS).forEach(id => { if (id !== appData.aiProvider && ok(id)) order.push(id); });
+            full.forEach(id => { if (id !== appData.aiProvider && ok(id)) order.push(id); });
         }
         return order;
     }
@@ -2489,25 +2545,40 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
     // Appel brut à un fournisseur → renvoie le texte ou lève une erreur
     async function callProvider(id, prompt, imagesBase64 = []) {
         const P = AI_PROVIDERS[id];
-        const key = appData.apiKeys[id];
-        const model = getAIModel(id);
+        const key = (callProvider._keyOverride || {})[id] || appData.apiKeys[id];
+        // Modèle qui a fonctionné en secours pendant cette session (évite de retenter un modèle refusé)
+        const sess = callProvider._sessionModel || {};
+        const mo = (callProvider._modelOverride || {})[id];
+        const model = mo || ((!appData.aiModels[id] && sess[id] && sess[id].key === key) ? sess[id].model : getAIModel(id));
         const imgs = (imagesBase64 || []).filter(Boolean);
         let resp, data;
 
         if (P.format === 'gemini') {
+            const ex = window._geminiExhausted || {};
+            if (ex[key + '|' + model] && ex[key + '|' + model] > Date.now() && !/lite/.test(model)) {
+                return callProvider._withModel(id, 'gemini-flash-lite-latest', prompt, imgs);
+            }
             if (window._geminiRefused && window._geminiRefused[model]) {
                 const alt = await pickGeminiModelForKey(key, model);
                 if (alt && alt !== model) return callProvider._withModel(id, alt, prompt, imgs);
             }
             const parts = [{ text: prompt }];
             imgs.forEach(b64 => parts.push({ inlineData: { mimeType: "image/jpeg", data: b64 } }));
-            resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+            resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-                body: JSON.stringify({ contents: [{ parts }] })
+                body: JSON.stringify({ contents: [{ parts }], ...(/Réponds UNIQUEMENT en JSON valide/.test(prompt) ? { generationConfig: { responseMimeType: 'application/json' } } : {}) })
             });
             data = await readJsonSafe(resp);
             if (!resp.ok) {
                 const raw = data?.error?.message || '';
+                const quota = resp.status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(raw);
+                if (quota && !/lite/.test(model)) {
+                    // Quota du modèle Flash atteint → on bascule sur Flash-Lite pendant 1 h (quota séparé)
+                    (window._geminiExhausted = window._geminiExhausted || {})[key + '|' + model] = Date.now() + 3600000;
+                    console.warn('[IA] Quota Gemini atteint sur ' + model + ' → Flash-Lite');
+                    showToast('⚡ Quota Gemini Flash atteint → passage sur Flash-Lite');
+                    return callProvider._withModel(id, 'gemini-flash-lite-latest', prompt, imgs);
+                }
                 const busy = [500, 503].includes(resp.status) || /high demand|overloaded|UNAVAILABLE|try again later/i.test(raw);
                 if (busy) {
                     // Pendant un repli, on ne relance pas de nouveaux essais (évite les cascades)
@@ -2549,7 +2620,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         if (P.format === 'anthropic') {
             const content = imgs.map(b64 => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }));
             content.push({ type: 'text', text: prompt });
-            resp = await fetch(P.url, {
+            resp = await fetchWithTimeout(P.url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2579,24 +2650,42 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         }
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` };
         if (id === 'openrouter') { headers['HTTP-Referer'] = location.origin; headers['X-Title'] = 'NUTRI+ Coach'; }
-        resp = await fetch(P.url, {
-            method: 'POST', headers,
-            body: JSON.stringify({ model, messages: [{ role: 'user', content }] })
-        });
+        const body = { model, messages: [{ role: 'user', content }] };
+        if (id === 'groq' && /qwen/i.test(model) && !callProvider._noReasoningParams) {
+            body.reasoning_format = 'hidden';   // sinon Qwen écrit sa réflexion dans <think>…</think>
+            body.reasoning_effort = 'none';     // mode "instruct" : réponse directe, plus rapide
+        }
+        resp = await fetchWithTimeout(P.url, { method: 'POST', headers, body: JSON.stringify(body) });
         data = await readJsonSafe(resp);
         if (!resp.ok) {
             const raw = data?.error?.message || data?.message || '';
             const code = data?.error?.code || '';
+            if (resp.status === 400 && /reasoning_(format|effort)/i.test(raw) && !callProvider._noReasoningParams) {
+                callProvider._noReasoningParams = true;          // paramètre refusé → on réessaie sans
+                return callProvider(id, prompt, imgs);
+            }
             const modelGone = [400, 404].includes(resp.status) && (/decommissioned|does not exist|not found|no longer supported|deprecated/i.test(raw) || /model_(not_found|decommissioned)/.test(code)) && /model/i.test(raw + code);
-            if (modelGone && model !== P.defaultModel) {
-                console.warn(`[IA] ${P.name} : modèle ${model} retiré → ${P.defaultModel}`);
-                return callProvider._withModel(id, P.defaultModel, prompt, imgs);
+            if (modelGone) {
+                const tried = (callProvider._triedModels = callProvider._triedModels || {});
+                (tried[id] = tried[id] || new Set()).add(model);
+                const next = [P.defaultModel, ...(P.backupModels || [])].find(m => !tried[id].has(m));
+                if (next) {
+                    console.warn(`[IA] ${P.name} : modèle ${model} indisponible pour cette clé → ${next}`);
+                    try {
+                        const out = await callProvider._withModel(id, next, prompt, imgs);
+                        (callProvider._sessionModel = callProvider._sessionModel || {})[id] = { model: callProvider._lastOkModel || next, key };
+                        return out;
+                    }
+                    finally { if (tried[id]) tried[id].delete(next); }
+                }
             }
             throw aiHttpError(data, resp, `Erreur serveur ${P.name}`);
         }
-        const txt = data.choices?.[0]?.message?.content;
+        callProvider._lastOkModel = model;
+        const raw = data.choices?.[0]?.message?.content;
+        const txt = stripReasoning(typeof raw === 'string' ? raw : (raw || []).map(c => c.text || '').join(''));
         if (!txt) throw new Error("L'IA n'a pas répondu. Réessaie.");
-        return typeof txt === 'string' ? txt : txt.map(c => c.text || '').join('');
+        return txt;
     }
 
     // Liste les modèles Gemini réellement accessibles avec CETTE clé (dépend du compte)
@@ -2640,12 +2729,28 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         } catch (e) { /* clé invalide : on garde la liste de base */ }
     }
 
+    // Coupe une requête qui ne répond pas → la bascule vers une autre IA peut prendre le relais
+    async function fetchWithTimeout(url, opts = {}, ms = 45000){
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), ms);
+        try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
+        catch (e) { if (e.name === 'AbortError') { const err = new Error("Pas de réponse après " + Math.round(ms/1000) + " s (serveur lent ou saturé)."); err.status = 504; throw err; } throw e; }
+        finally { clearTimeout(timer); }
+    }
+
+    // Retire le "raisonnement" que certains modèles écrivent avant la réponse
+    function stripReasoning(t){
+        return String(t||'').replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/^[\s\S]*?<\/think>/i,'').trim();
+    }
+
     // Relance un appel avec un autre modèle sans toucher aux réglages enregistrés
+    // (modèle / clé temporaires gardés en mémoire seulement : jamais enregistrés dans tes données)
     callProvider._withModel = async function(id, model, prompt, imgs) {
-        const saved = appData.aiModels[id];
-        appData.aiModels[id] = model;
+        const mo = (callProvider._modelOverride = callProvider._modelOverride || {});
+        const prev = mo[id];
+        mo[id] = model;
         try { return await callProvider(id, prompt, imgs); }
-        finally { if (saved === undefined) delete appData.aiModels[id]; else appData.aiModels[id] = saved; }
+        finally { if (prev === undefined) delete mo[id]; else mo[id] = prev; }
     };
 
     // Essaie le fournisseur actif, puis bascule sur les autres si erreur
@@ -2657,7 +2762,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         let lastErr = null;
         for (let i = 0; i < order.length; i++) {
             try {
-                const txt = await callProvider(order[i], prompt, imagesBase64);
+                const txt = await callProviderAllKeys(order[i], prompt, imagesBase64);
                 if (i > 0) showToast(`🔀 Réponse via ${AI_PROVIDERS[order[i]].name}${lastErr ? ' (' + AI_PROVIDERS[order[0]].name + ' indisponible)' : ''}`);
                 return txt;
             } catch (e) {
@@ -2683,8 +2788,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const fullPrompt = isJson ? withMed + " Réponds UNIQUEMENT en JSON valide, sans texte avant ni après, sans balises markdown." : withMed;
         try {
             const text = await callAIWithFallback(fullPrompt, imagesBase64);
-            return isJson ? parseAIJson(text) : text;
-        } catch (e) { showAlert("Erreur IA", e.message); return null; }
+            return isJson ? parseAIJson(stripReasoning(text)) : stripReasoning(text);
+        } catch (e) { showAlert("Erreur IA", explainAIError(e.message, e.status)); return null; }
     }
     const callAI = callGemini;
 
@@ -2701,13 +2806,15 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
         const instr = "Transcris exactement ce qui est dit dans cet audio en français. Retourne uniquement la transcription brute, sans ponctuation excessive, sans guillemets, sans commentaires.";
         let lastErr = null;
-        for (const id of order) {
+        const attempts = [];
+        order.forEach(id => getProviderKeys(id).forEach(k => attempts.push({ id, k })));
+        for (const { id, k: sttKey } of attempts) {
             const P = AI_PROVIDERS[id];
             try {
                 if (P.format === 'gemini') {
                     const b64 = await blobToBase64(blob);
-                    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getAIModel(id))}:generateContent`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': appData.apiKeys[id] },
+                    const resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getAIModel(id))}:generateContent`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': sttKey },
                         body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: mimeType, data: b64 } }, { text: instr }] }] })
                     });
                     const data = await readJsonSafe(resp);
@@ -2720,7 +2827,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
                     fd.append('file', blob, `audio.${ext}`);
                     fd.append('model', P.sttModel);
                     fd.append('language', 'fr');
-                    const resp = await fetch(P.sttUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${appData.apiKeys[id]}` }, body: fd });
+                    const resp = await fetchWithTimeout(P.sttUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${sttKey}` }, body: fd });
                     const data = await readJsonSafe(resp);
                     if (!resp.ok) throw aiHttpError(data, resp, "Erreur transcription");
                     if (data.text) return data.text.trim();
@@ -2802,6 +2909,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const m = String(msg || '');
         if (status === 401 || status === 403 || /api key not valid|invalid api key|incorrect api key|invalid x-api-key|authentication|unauthori[sz]ed|API_KEY_INVALID/i.test(m))
             return "Clé refusée par le fournisseur. Vérifie que tu as copié la clé en entier, qu'elle correspond bien au fournisseur choisi et qu'elle n'a pas été supprimée sur son site.";
+        if (status === 413 || /too large|entity too large|payload/i.test(m))
+            return "Photo trop lourde pour ce fournisseur.";
         if (status === 503 || status === 500 || status === 529 || /high demand|overloaded|try again later|UNAVAILABLE/i.test(m))
             return "Serveur de l'IA saturé pour le moment (la clé est valide ✅). Réessaie dans quelques minutes, ou ajoute une 2e IA (ex. Groq, gratuit) pour prendre le relais automatiquement.";
         if (status === 429 || /quota|rate limit|resource_exhausted|insufficient_quota/i.test(m))
@@ -2840,6 +2949,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         document.getElementById('ai-fallback-in').checked = !!appData.aiFallback;
         fillAIProviderFields(appData.aiProvider);
         renderAIBadges();
+        renderAIPriority();
     }
 
     function fillAIProviderFields(id) {
@@ -2857,6 +2967,9 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             input._checkBound = true;
         }
         updateKeyCheck();
+        const nb = ((appData.apiKeyBackups || {})[id] || []).length;
+        const bk = document.getElementById('ai-backup-info');
+        if (bk) bk.textContent = nb ? `+ ${nb} clé${nb > 1 ? 's' : ''} de secours pour ce fournisseur` : '';
         if (id === 'gemini') refreshGeminiModelList();
     }
 
@@ -2874,7 +2987,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
     function onAIProviderChange() {
         const id = document.getElementById('ai-provider-sel').value;
         fillAIProviderFields(id);
-        if (appData.apiKeys[id]) { appData.aiProvider = id; saveData(); renderAIBadges(); showToast(`${AI_PROVIDERS[id].emoji} ${AI_PROVIDERS[id].name} activé`); }
+        // On configure ce fournisseur ; l'IA principale se choisit dans « Ordre de priorité »
     }
 
     function saveApiKey() {
@@ -2891,7 +3004,9 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         appData.apiKeys[id] = key;
         appData.keysUpdatedAt = Date.now();
         if (model) appData.aiModels[id] = model; else delete appData.aiModels[id];
-        appData.aiProvider = id;
+        // Une nouvelle IA s'ajoute en fin de priorité ; elle devient principale seulement s'il n'y en avait pas
+        if (!appData.apiKeys[appData.aiProvider]) appData.aiProvider = id;
+        if (!(appData.aiOrder || []).includes(id)) appData.aiOrder = [...getPriorityOrder().filter(x => x !== id), id];
         if (id === 'gemini') appData.apiKey = key; // compatibilité anciennes versions
         saveData();
         renderAISettings();
@@ -2902,9 +3017,15 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const id = document.getElementById('ai-provider-sel').value;
         if (!appData.apiKeys[id]) return showToast("Aucune clé pour ce fournisseur");
         delete appData.apiKeys[id];
-        if (id === 'gemini') appData.apiKey = "";
+        const backups = (appData.apiKeyBackups || {})[id] || [];
+        if (backups.length) {
+            appData.apiKeys[id] = backups.shift();
+            if (!backups.length) delete appData.apiKeyBackups[id];
+            showToast("🔑 Clé de secours n°1 promue clé principale");
+        }
+        if (id === 'gemini') appData.apiKey = appData.apiKeys.gemini || "";
         appData.keysUpdatedAt = Date.now();
-        if (appData.aiProvider === id) {
+        if (appData.aiProvider === id && !appData.apiKeys[id]) {
             const other = Object.keys(AI_PROVIDERS).find(k => appData.apiKeys[k]);
             appData.aiProvider = other || 'gemini';
         }
@@ -2913,9 +3034,79 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         showToast("Clé supprimée 🗑️");
     }
 
+    function addBackupKey() {
+        migrateAIKeys();
+        let id = document.getElementById('ai-provider-sel').value;
+        const c = checkKeyInput(id);
+        if (!c.key) return showAlert("Clé manquante", "Colle la clé de secours dans le champ « Clé API », puis appuie sur ce bouton.");
+        if (c.detected && c.detected !== id) id = c.detected;
+        if (!appData.apiKeys[id]) { saveApiKey(); return; }        // pas encore de clé principale → elle le devient
+        const list = appData.apiKeyBackups[id] = appData.apiKeyBackups[id] || [];
+        if (c.key === appData.apiKeys[id] || list.includes(c.key)) return showToast("Cette clé est déjà enregistrée");
+        if (list.length >= 4) return showAlert("Maximum atteint", "4 clés de secours maximum par fournisseur.");
+        list.push(c.key);
+        appData.keysUpdatedAt = Date.now();
+        saveData();
+        fillAIProviderFields(id);
+        renderAIPriority();
+        showToast(`🔑 Clé de secours ${AI_PROVIDERS[id].name} n°${list.length} ajoutée`);
+    }
+
+    function removeBackupKey(id, i) {
+        const list = (appData.apiKeyBackups || {})[id]; if (!list) return;
+        const tag = id + i;
+        if (window._bkDel !== tag) { window._bkDel = tag; setTimeout(() => { window._bkDel = null; }, 3000); return showToast("Appuie encore sur 🗑️ pour supprimer cette clé de secours"); }
+        window._bkDel = null;
+        list.splice(i, 1); if (!list.length) delete appData.apiKeyBackups[id];
+        appData.keysUpdatedAt = Date.now();
+        saveData(); renderAIPriority(); showToast("Clé de secours supprimée 🗑️");
+    }
+
+    function moveAIPriority(id, dir) {
+        const order = getPriorityOrder();
+        const i = order.indexOf(id), j = i + dir;
+        if (i < 0 || j < 0 || j >= order.length) return;
+        [order[i], order[j]] = [order[j], order[i]];
+        appData.aiOrder = order;
+        appData.aiProvider = order[0];
+        appData.keysUpdatedAt = Date.now();
+        saveData();
+        renderAISettings();
+        showToast(`${AI_PROVIDERS[order[0]].emoji} ${AI_PROVIDERS[order[0]].name} est l'IA principale`);
+    }
+
+    function renderAIPriority() {
+        const c = document.getElementById('ai-priority-list'); if (!c) return;
+        const order = getPriorityOrder();
+        if (!order.length) { c.innerHTML = '<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic">Aucune clé enregistrée.</div>'; return; }
+        const btn = 'width:34px;height:34px;padding:0;margin:0;font-size:0.9rem;border-radius:10px;flex-shrink:0';
+        c.innerHTML = order.map((id, i) => {
+            const P = AI_PROVIDERS[id];
+            const backups = (appData.apiKeyBackups || {})[id] || [];
+            const rows = backups.map((k, b) => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0 0 34px;font-size:0.76rem;color:var(--text-muted)">↳ secours n°${b + 1} : <code>${escHtml(maskKey(k))}</code><button class="outline" style="${btn};width:28px;height:28px;margin-left:auto" onclick="removeBackupKey('${id}',${b})">🗑️</button></div>`).join('');
+            return `<div style="padding:8px 10px;border-radius:12px;margin-bottom:6px;background:${i === 0 ? 'var(--primary-light)' : 'transparent'};border:1.5px solid ${i === 0 ? 'var(--primary)' : 'rgba(128,128,128,0.25)'}">
+                <div style="display:flex;align-items:center;gap:8px">
+                    <div style="font-weight:900;width:22px;text-align:center">${i + 1}</div>
+                    <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:0.86rem">${P.emoji} ${P.name}${i === 0 ? ' · principale' : ''}</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted)"><code>${escHtml(maskKey(appData.apiKeys[id]))}</code>${backups.length ? ` + ${backups.length} secours` : ''}</div></div>
+                    <button class="outline" style="${btn}" ${i === 0 ? 'disabled' : ''} onclick="moveAIPriority('${id}',-1)" aria-label="Monter">↑</button>
+                    <button class="outline" style="${btn}" ${i === order.length - 1 ? 'disabled' : ''} onclick="moveAIPriority('${id}',1)" aria-label="Descendre">↓</button>
+                </div>${rows}</div>`;
+        }).join('');
+    }
+
     function saveAIFallback() {
         appData.aiFallback = document.getElementById('ai-fallback-in').checked;
         saveData();
+    }
+
+    // Petite image de test (fabriquée dans l'appli) pour vérifier que le fournisseur accepte les photos
+    function makeTestImage() {
+        const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+        const g = c.getContext('2d');
+        g.fillStyle = '#2e7d32'; g.fillRect(0, 0, 256, 256);
+        g.fillStyle = '#ffffff'; g.font = 'bold 48px sans-serif'; g.fillText('TEST', 70, 145);
+        return c.toDataURL('image/jpeg', 0.8).split(',')[1];
     }
 
     async function testApiKey() {
@@ -2932,20 +3123,30 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             updateKeyCheck();
             showToast(`Clé ${AI_PROVIDERS[id].name} détectée → test chez ${AI_PROVIDERS[id].name}`);
         }
-        const backupKey = appData.apiKeys[id], backupModel = appData.aiModels[id];
-        appData.apiKeys[id] = key;
-        if (model) appData.aiModels[id] = model; else delete appData.aiModels[id];
+        const ko = (callProvider._keyOverride = callProvider._keyOverride || {});
+        const mo = (callProvider._modelOverride = callProvider._modelOverride || {});
+        ko[id] = key; mo[id] = model || AI_PROVIDERS[id].defaultModel;
         showToast("⏳ Test en cours...");
         try {
             const t0 = Date.now();
             const r = await callProvider(id, "Réponds juste: OK");
-            showAlert("✅ Clé valide", `${AI_PROVIDERS[id].name} (${getAIModel(id)}) répond en ${((Date.now() - t0) / 1000).toFixed(1)} s. Réponse : ${r.trim().slice(0, 40)} — N'oublie pas d'enregistrer.`);
+            const tText = ((Date.now() - t0) / 1000).toFixed(1);
+            let photoLine = '';
+            if (AI_PROVIDERS[id].vision) {
+                try {
+                    const t1 = Date.now();
+                    await callProvider(id, "Quelle est la couleur dominante de cette image ? Réponds en un mot.", [makeTestImage()]);
+                    photoLine = `\n📸 Photos : OK (${((Date.now() - t1) / 1000).toFixed(1)} s)`;
+                } catch (e2) {
+                    photoLine = `\n📸 Photos : ❌ refusées — ${explainAIError(e2.message, e2.status)}`;
+                }
+            }
+            showAlert("✅ Clé valide", `${AI_PROVIDERS[id].name} (${mo[id]})\n💬 Texte : OK (${tText} s)${photoLine}\n\nRéponse : ${r.trim().slice(0, 40)} — N'oublie pas d'enregistrer.`);
         } catch (e) {
             const msg = explainAIError(e.message, e.status);
             showAlert("❌ Échec du test", `${msg}\n\nClé testée : ${maskKey(key)} (${key.length} caractères)${e.raw && e.raw !== msg ? '\nDétail : ' + String(e.raw).slice(0, 120) : ''}`);
         } finally {
-            if (backupKey) appData.apiKeys[id] = backupKey; else delete appData.apiKeys[id];
-            if (backupModel) appData.aiModels[id] = backupModel; else delete appData.aiModels[id];
+            delete ko[id]; delete mo[id];
         }
     }
 
@@ -2976,7 +3177,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         let weekKcal = 0, weekSessions = 0, weekDays = 0;
         for (let i = 0; i < 7; i++) {
             const d = new Date(today); d.setDate(today.getDate() - i);
-            const ds = d.toISOString().split('T')[0];
+            const ds = dateKey(d);
             const day = appData.days[ds];
             if (day && day.sport > 0) { weekKcal += day.sport; weekDays++; }
             if (day && day.sportEntries) weekSessions += day.sportEntries.length;
@@ -3017,7 +3218,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         let weekHtml = '';
         for (let i = 0; i < 7; i++) {
             const d = new Date(today); d.setDate(today.getDate() - i);
-            const ds = d.toISOString().split('T')[0];
+            const ds = dateKey(d);
             const day = appData.days[ds];
             if (!day || !day.sportEntries || day.sportEntries.length === 0) continue;
             const dayLabel = i === 0 ? "Aujourd'hui" : i === 1 ? "Hier" : formatDate(ds);
@@ -3266,6 +3467,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
 
     // ===== REPAS FAVORIS =====
     function escHtml(t){return String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    // Texte de l'IA → HTML sûr (aucune balise de l'IA n'est exécutée), avec **gras** et retours à la ligne
+    function formatAIText(t){return escHtml(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');}
 
     function renderMealFavorites(){
         const c=document.getElementById('meal-favorites'); if(!c) return;
@@ -3434,7 +3637,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
             if(tipsEl){
                 if(res.healthTips){
                     tipsEl.style.display='block';
-                    tipsEl.innerHTML='<div style="font-weight:800;font-size:0.82rem;margin-bottom:4px">💡 Comment améliorer ce repas :</div>'+res.healthTips.split('\n').filter(Boolean).map(t=>`<div style="font-size:0.8rem;margin-top:3px">• ${t.replace(/^[-•]\s*/, '')}</div>`).join('');
+                    tipsEl.innerHTML='<div style="font-weight:800;font-size:0.82rem;margin-bottom:4px">💡 Comment améliorer ce repas :</div>'+res.healthTips.split('\n').filter(Boolean).map(t=>`<div style="font-size:0.8rem;margin-top:3px">• ${escHtml(t.replace(/^[-•]\s*/, ''))}</div>`).join('');
                 } else { tipsEl.style.display='none'; }
             }
             document.getElementById('m-preview').style.display='block';
@@ -3724,8 +3927,8 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
                 const thumb = m.images && m.images[0]
                     ? `<img src="data:image/jpeg;base64,${m.images[0]}" class="meal-thumb" alt="">`
                     : `<div class="meal-thumb-icon">${mealIcons[m.type]||'🍽️'}</div>`;
-                const shortDesc = m.desc ? (m.desc.length > 42 ? m.desc.substring(0,42)+'…' : m.desc) : '';
-                const tipsHtml=m.healthTips?`<div style="background:var(--primary-light);border-left:3px solid var(--primary);border-radius:0 8px 8px 0;padding:8px 10px;margin-top:8px;font-size:0.78rem;line-height:1.6;color:var(--text-color)">💡 ${m.healthTips.split('\n').filter(Boolean).map(t=>t.replace(/^[-•]\s*/,'')).join('<br>• ')}</div>`:'';
+                const shortDesc = m.desc ? escHtml(m.desc.length > 42 ? m.desc.substring(0,42)+'…' : m.desc) : '';
+                const tipsHtml=m.healthTips?`<div style="background:var(--primary-light);border-left:3px solid var(--primary);border-radius:0 8px 8px 0;padding:8px 10px;margin-top:8px;font-size:0.78rem;line-height:1.6;color:var(--text-color)">💡 ${m.healthTips.split('\n').filter(Boolean).map(t=>escHtml(t.replace(/^[-•]\s*/,''))).join('<br>• ')}</div>`:'';
                 el.innerHTML=`
                     <div style="display:flex;align-items:center;gap:10px;width:100%">
                         ${thumb}
@@ -3817,7 +4020,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
 
         for (let i = 6; i >= 0; i--) {
             const d = new Date(endDate); d.setDate(endDate.getDate() - i);
-            const ds = d.toISOString().split('T')[0];
+            const ds = dateKey(d);
             const wd = appData.days[ds] || {};
             const meals = wd.meals || [];
             const dayCal = meals.reduce((s, m) => s + (m.kcal || 0), 0);
@@ -3943,8 +4146,8 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
         let weightLine = '';
         const wh = appData.weightHistory || [];
         if (wh.length >= 1) {
-            const wkStartStr = startDate.toISOString().split('T')[0];
-            const wkEndStr = endDate.toISOString().split('T')[0];
+            const wkStartStr = dateKey(startDate);
+            const wkEndStr = dateKey(endDate);
             const inWeek = wh.filter(e => e.date >= wkStartStr && e.date <= wkEndStr);
             const before = wh.filter(e => e.date < wkStartStr).slice(-1)[0];
             if (inWeek.length >= 1 && before) {
@@ -4158,7 +4361,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
     function updateSleepQualityMsg(){const el=document.getElementById('sleep-quality-msg');if(sleepInputVal<5){el.textContent='🔴 Très insuffisant';el.style.color='var(--danger)';}else if(sleepInputVal<6.5){el.textContent='🟠 Insuffisant';el.style.color='#e67e22';}else if(sleepInputVal<7.5){el.textContent='🟡 Correct';el.style.color='#d69e2e';}else if(sleepInputVal<=9){el.textContent='🟢 Optimal !';el.style.color='var(--success)';}else{el.textContent='🔵 Très long';el.style.color='var(--primary)';}}
     function saveSleepEntry(){if(!appData.days[selectedDate])appData.days[selectedDate]={meals:[],sport:0,sportEntries:[],closed:false};appData.days[selectedDate].sleep=sleepInputVal;saveData();closeSleepModal();renderHomeData();showToast(`Sommeil enregistré : ${sleepInputVal.toFixed(1)}h 😴`);}
     function getSleepEmoji(h){if(!h)return '';if(h<5)return '🔴';if(h<6.5)return '🟠';if(h<7.5)return '🟡';if(h<=9)return '🟢';return '🔵';}
-    function getAvgSleep7Days(){const today=new Date();let total=0,count=0;for(let i=0;i<7;i++){const d=new Date(today);d.setDate(today.getDate()-i);const ds=d.toISOString().split('T')[0];const s=appData.days[ds]?.sleep;if(s){total+=s;count++;}}return count>0?total/count:7;}
+    function getAvgSleep7Days(){const today=new Date();let total=0,count=0;for(let i=0;i<7;i++){const d=new Date(today);d.setDate(today.getDate()-i);const ds=dateKey(d);const s=appData.days[ds]?.sleep;if(s){total+=s;count++;}}return count>0?total/count:7;}
 
     function checkWeightReminder(){const lastPrompt=appData.lastWeightPrompt;const today=getTodayStr();if(!lastPrompt){appData.lastWeightPrompt=today;saveData();return;}const diffDays=Math.floor((new Date(today)-new Date(lastPrompt))/(1000*60*60*24));if(diffDays>=7)setTimeout(()=>{document.getElementById('modal-weight').style.display='flex';},1500);}
     function saveWeightEntry(){const val=parseFloat(document.getElementById('input-weight-val').value);if(isNaN(val)||val<30||val>300)return showAlert("Poids invalide","Entre un poids valide.");if(!appData.weightHistory)appData.weightHistory=[];appData.weightHistory.push({date:getTodayStr(),weight:val});appData.lastWeightPrompt=getTodayStr();if(appData.profile)appData.profile.weight=val;saveData();closeWeightModal();renderWeightChart();showToast("Poids enregistré ⚖️");}
@@ -4366,7 +4569,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
         let totalMeals = 0, closedDays = 0, totalKcal = 0;
         for (let i = 0; i < 7; i++) {
             const d = new Date(today); d.setDate(today.getDate() - i);
-            const ds = d.toISOString().split('T')[0];
+            const ds = dateKey(d);
             const day = appData.days[ds];
             if (day) {
                 if (day.meals.length > 0) totalMeals += day.meals.length;
@@ -4771,7 +4974,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
         for (let i = 0; i <= 7; i++) {
             const d = new Date(anchor + 'T12:00:00');
             d.setDate(d.getDate() - i);
-            const ds = d.toISOString().split('T')[0];
+            const ds = dateKey(d);
             const wd = appData.days[ds] || {};
             const meals = wd.meals || [];
             const kcal = meals.reduce((s, m) => s + m.kcal, 0);
@@ -4870,39 +5073,11 @@ MOYENNES SEMAINE : ${avgCal > 0 ? `${avgCal} kcal/j mangées` : ''} | ${avgProt 
             const firstName = p?.name ? p.name.split(' ')[0] : '';
             const greeting = getGreeting();
 
-            // Message d'attente pendant l'analyse
-            const loadingMsg = `${greeting} ${firstName ? firstName + ' !' : '!'} Je regarde tes données de la semaine... 🔍`;
-            appendCoachMessage(loadingMsg, 'coach');
-
-            // Générer le vrai message proactif basé sur les 7 derniers jours
-            if (hasAIKey()) {
-                const fullContext = buildAlexContext7Days(getTodayStr());
-                const proactivePrompt = `Tu es Alex, coach nutrition et sport personnel intégré dans NUTRI+.
-L'utilisateur vient d'ouvrir le chat. Génère un message d'accueil PROACTIF en 2-3 phrases qui :
-1. Commence par "${greeting} ${firstName ? firstName + ' !' : '!'}" + une observation CONCRÈTE tirée des 7 derniers jours (cite un chiffre ou une tendance réelle).
-2. Pose UNE seule question pertinente pour engager la conversation — basée sur ce que tu vois dans les données.
-Sois direct, chaleureux, comme un vrai coach. Jamais de "je suis Alex" ni de présentation générique — tu te concentres sur ses données.
-
-${fullContext}`;
-
-                callGemini(proactivePrompt, false).then(txt => {
-                    // Remplacer le message de loading par le vrai message
-                    const msgs = document.querySelectorAll('.chat-msg-wrapper.coach');
-                    if (msgs.length > 0) {
-                        const lastCoach = msgs[msgs.length - 1];
-                        const bubble = lastCoach.querySelector('.chat-msg-bubble');
-                        if (bubble) bubble.innerHTML = (txt || loadingMsg).replace(/\n/g, '<br>');
-                    }
-                    coachChatHistory.push({ role: 'coach', content: txt || loadingMsg });
-                    renderCoachSuggestions();
-                }).catch(() => {
-                    coachChatHistory.push({ role: 'coach', content: loadingMsg });
-                    renderCoachSuggestions();
-                });
-            } else {
-                coachChatHistory.push({ role: 'coach', content: loadingMsg });
-                renderCoachSuggestions();
-            }
+            // Accueil calculé dans l'appli à partir des 7 derniers jours (ne consomme aucune demande IA)
+            const welcome = buildLocalCoachWelcome(greeting, firstName);
+            appendCoachMessage(welcome, 'coach');
+            coachChatHistory.push({ role: 'coach', content: welcome });
+            renderCoachSuggestions();
         } else {
             renderCoachSuggestions();
         }
@@ -4917,6 +5092,34 @@ ${fullContext}`;
         const overlay = document.getElementById('coach-chat-overlay');
         overlay.classList.add('closing');
         setTimeout(() => { overlay.style.display = 'none'; }, 240);
+    }
+
+    function buildLocalCoachWelcome(greeting, firstName) {
+        const hello = `${greeting} ${firstName ? firstName + ' !' : '!'}`;
+        const t = appData.profile?.targets || {};
+        const days = [];
+        for (let i = 1; i <= 7; i++) {
+            const d = new Date(); d.setDate(d.getDate() - i);
+            const key = dateKey(d);
+            const day = appData.days?.[key];
+            if (day?.meals?.length) days.push(day);
+        }
+        const today = appData.days?.[getTodayStr()];
+        const todayKcal = (today?.meals || []).reduce((a, m) => a + (m.kcal || 0), 0);
+        if (!days.length) {
+            return todayKcal
+                ? `${hello} Tu en es à ${todayKcal} kcal aujourd'hui sur ${t.cal || '—'}. Qu'est-ce que tu veux savoir sur ta journée ?`
+                : `${hello} Je n'ai pas encore de repas cette semaine pour t'analyser. Tu veux qu'on regarde ensemble comment bien démarrer ta journée ?`;
+        }
+        const avg = k => Math.round(days.reduce((a, d) => a + d.meals.reduce((b, m) => b + (m[k] || 0), 0), 0) / days.length);
+        const kcal = avg('kcal'), prot = avg('prot');
+        const parts = [`${hello} Sur les 7 derniers jours, tu as noté tes repas ${days.length} jour${days.length > 1 ? 's' : ''}, avec une moyenne de ${kcal} kcal${t.cal ? ` pour un objectif de ${t.cal}` : ''}.`];
+        if (t.prot && prot < t.prot * 0.8) parts.push(`Tes protéines sont un peu justes (${prot} g en moyenne sur ${t.prot} g).`);
+        else if (t.cal && kcal > t.cal * 1.1) parts.push(`Tu es un peu au-dessus de ton objectif en moyenne.`);
+        else if (days.length < 5) parts.push(`La régularité de saisie sera ta meilleure alliée pour des conseils précis.`);
+        else parts.push(`Belle régularité 👏`);
+        parts.push(todayKcal ? `Aujourd'hui tu en es à ${todayKcal} kcal — on fait le point ?` : `Qu'est-ce que tu prévois de manger aujourd'hui ?`);
+        return parts.join(' ');
     }
 
     function getGreeting() {
@@ -5041,7 +5244,7 @@ Réponds maintenant à la dernière question de l'utilisateur.`;
         const bubble = document.createElement('div');
         bubble.className = 'chat-msg-bubble';
         // Convertir les sauts de ligne en <br>
-        bubble.innerHTML = text.replace(/\n/g, '<br>');
+        bubble.innerHTML = formatAIText(text);
         msgRow.appendChild(bubble);
 
         wrapper.appendChild(msgRow);

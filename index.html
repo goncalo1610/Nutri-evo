@@ -2425,6 +2425,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             name: "Groq", emoji: "⚡", format: "openai",
             url: "https://api.groq.com/openai/v1/chat/completions",
             sttUrl: "https://api.groq.com/openai/v1/audio/transcriptions", sttModel: "whisper-large-v3-turbo",
+            maxImages: 3,
             defaultModel: "qwen/qwen3.6-27b",   // texte + photos (les modèles Llama ont été retirés par Groq en 2026)
             models: ["qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"],
             keyUrl: "console.groq.com/keys", keyHint: "gsk_...",
@@ -2475,7 +2476,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
     // Ordre d'essai : fournisseur actif d'abord, puis les autres qui ont une clé
     function getProviderOrder(needs = {}) {
         migrateAIKeys();
-        const ok = id => appData.apiKeys[id] && (!needs.vision || AI_PROVIDERS[id].vision) && (!needs.audio || AI_PROVIDERS[id].audio);
+        const ok = id => appData.apiKeys[id] && (!needs.vision || AI_PROVIDERS[id].vision) && (!needs.audio || AI_PROVIDERS[id].audio)
+            && (!needs.imgCount || !AI_PROVIDERS[id].maxImages || needs.imgCount <= AI_PROVIDERS[id].maxImages);
         const order = [];
         if (ok(appData.aiProvider)) order.push(appData.aiProvider);
         if (appData.aiFallback || order.length === 0) {
@@ -2648,14 +2650,15 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
 
     // Essaie le fournisseur actif, puis bascule sur les autres si erreur
     async function callAIWithFallback(prompt, imagesBase64 = []) {
-        const hasImg = (imagesBase64 || []).some(Boolean);
-        const order = getProviderOrder({ vision: hasImg });
+        const imgCount = (imagesBase64 || []).filter(Boolean).length;
+        const hasImg = imgCount > 0;
+        const order = getProviderOrder({ vision: hasImg, imgCount });
         if (!order.length) throw new Error("Aucune clé API enregistrée. Va dans ⚙️ Réglages.");
         let lastErr = null;
         for (let i = 0; i < order.length; i++) {
             try {
                 const txt = await callProvider(order[i], prompt, imagesBase64);
-                if (i > 0) showToast(`🔀 Réponse via ${AI_PROVIDERS[order[i]].name}`);
+                if (i > 0) showToast(`🔀 Réponse via ${AI_PROVIDERS[order[i]].name}${lastErr ? ' (' + AI_PROVIDERS[order[0]].name + ' indisponible)' : ''}`);
                 return txt;
             } catch (e) {
                 lastErr = new Error(`${AI_PROVIDERS[order[i]].name} : ${e.message}`);
@@ -3083,7 +3086,45 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
     }
 
     function triggerImportMulti(mode){if(currentImgs.length>=4)return showAlert("Maximum atteint","Tu peux ajouter jusqu'à 4 photos maximum.");if(mode==='camera')document.getElementById('multi-camera-input').click();else document.getElementById('multi-gallery-input').click();}
-    function processMultiFile(input){if(!input.files||!input.files.length)return;const files=Array.from(input.files);input.value="";const remaining=4-currentImgs.length;if(remaining<=0)return showAlert("Maximum atteint","Tu as déjà 4 photos. Supprime-en une pour en ajouter.");const toProcess=files.slice(0,remaining);if(files.length>remaining)showAlert("Maximum atteint","Seulement "+remaining+" photo(s) ajoutée(s) sur "+files.length+" sélectionnée(s). Maximum 4 photos.");let processed=0;toProcess.forEach(file=>{const reader=new FileReader();reader.onload=(e)=>{const dataURL=e.target.result;if(!dataURL||!dataURL.startsWith("data:"))return showAlert("Erreur","Impossible de lire ce fichier.");const b64=dataURL.split(",")[1];currentImgs.push(b64);processed++;if(processed===toProcess.length)renderImagesGrid();};reader.onerror=()=>showAlert("Erreur","Impossible de lire ce fichier.");reader.readAsDataURL(file);});}
+    // Réduit chaque photo (max 1600 px, JPEG) : l'iPhone produit des photos lourdes (HEIC, 3-12 Mo)
+    // que Groq refuse au-delà de 4 Mo par requête. Plus léger = plus rapide et moins de quota consommé.
+    function compressImageFile(file, maxSide = 1600, maxB64 = 1200000){
+        return new Promise(resolve => {
+            const fallback = () => { const r = new FileReader(); r.onload = e => resolve(String(e.target.result).split(',')[1] || null); r.onerror = () => resolve(null); r.readAsDataURL(file); };
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+                    const w = Math.max(1, Math.round(img.naturalWidth * scale)), h = Math.max(1, Math.round(img.naturalHeight * scale));
+                    const c = document.createElement('canvas'); c.width = w; c.height = h;
+                    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+                    let q = 0.82, b64 = c.toDataURL('image/jpeg', q).split(',')[1];
+                    while (b64.length > maxB64 && q > 0.45) { q -= 0.12; b64 = c.toDataURL('image/jpeg', q).split(',')[1]; }
+                    URL.revokeObjectURL(url);
+                    if (!b64 || b64.length < 100) return fallback();
+                    resolve(b64);
+                } catch (e) { URL.revokeObjectURL(url); fallback(); }
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); fallback(); };
+            img.src = url;
+        });
+    }
+
+    async function processMultiFile(input){
+        if(!input.files||!input.files.length)return;
+        const files=Array.from(input.files);input.value="";
+        const remaining=4-currentImgs.length;
+        if(remaining<=0)return showAlert("Maximum atteint","Tu as déjà 4 photos. Supprime-en une pour en ajouter.");
+        const toProcess=files.slice(0,remaining);
+        if(files.length>remaining)showAlert("Maximum atteint","Seulement "+remaining+" photo(s) ajoutée(s) sur "+files.length+" sélectionnée(s). Maximum 4 photos.");
+        for(const file of toProcess){
+            const b64=await compressImageFile(file);
+            if(!b64){showAlert("Erreur","Impossible de lire cette photo.");continue;}
+            currentImgs.push(b64);
+        }
+        renderImagesGrid();
+    }
     function removeImg(i){currentImgs.splice(i,1);renderImagesGrid();}
     function renderImagesGrid(){const grid=document.getElementById('images-grid');if(!grid)return;grid.innerHTML='';currentImgs.forEach((b64,i)=>{const div=document.createElement('div');div.className='img-thumb';div.innerHTML=`<img src="data:image/jpeg;base64,${b64}"><div class="img-thumb-remove" onclick="removeImg(${i})">×</div>`;grid.appendChild(div);});const btns=document.querySelectorAll('#view-meal-form .add-photo-btn');btns.forEach(b=>b.style.display=currentImgs.length>=4?'none':'');}
 
@@ -3721,7 +3762,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
     }
 
     function triggerImport(mode,ctx='meal'){importCtx=ctx;if(mode==='camera')document.getElementById('camera-input').click();else document.getElementById('gallery-input').click();}
-    function processFile(input){if(input.files&&input.files[0]){const reader=new FileReader();reader.onload=(e)=>{const b64=e.target.result.split(',')[1];analyzeMenu(b64);};reader.readAsDataURL(input.files[0]);}input.value="";}
+    async function processFile(input){if(input.files&&input.files[0]){const f=input.files[0];input.value="";const b64=await compressImageFile(f,2000,1800000);if(b64)analyzeMenu(b64);else showAlert("Erreur","Impossible de lire cette photo.");}else input.value="";}
 
     async function analyzeMenu(b64){const resDiv=document.getElementById('scan-res');const loader=document.getElementById('loader-scan');resDiv.style.display='none';loader.style.display='block';const res=await callGemini("Analyse ce menu de restaurant. Conseille les 2 plats les plus sains en expliquant brièvement pourquoi. Sois concis et bienveillant.",false,[b64]);loader.style.display='none';if(res){resDiv.textContent=res;resDiv.style.display='block';}}
     async function generateRecipe(){const ing=document.getElementById('fridge-in').value.trim();if(!ing)return showAlert("Ingrédients manquants","Liste ce que tu as dans ton frigo !");const resDiv=document.getElementById('recipe-res');const loader=document.getElementById('loader-recipe');resDiv.style.display='none';loader.style.display='block';const res=await callGemini(`Propose une recette saine, simple et rapide avec ces ingrédients: ${ing}. Inclus les étapes et une estimation des calories.`);loader.style.display='none';if(res){resDiv.textContent=res;resDiv.style.display='block';}}

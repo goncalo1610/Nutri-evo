@@ -2411,6 +2411,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             sttUrl: "https://api.openai.com/v1/audio/transcriptions", sttModel: "whisper-1",
             defaultModel: "gpt-6-luna",   // modèle économique actuel (photos ✅) — gpt-4o-mini est en fin de vie
             backupModels: ["gpt-5-mini", "gpt-4o-mini"],   // essayés si la clé n'a pas accès au modèle par défaut
+            pickModel: [/^gpt-6-luna$/, /^gpt-\d[\d.]*-mini$/, /mini$/],
             models: ["gpt-6-luna", "gpt-5-mini", "gpt-4o-mini", "gpt-4o"],
             keyUrl: "platform.openai.com/api-keys", keyHint: "sk-...",
             vision: true, audio: true,
@@ -2430,6 +2431,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             url: "https://api.mistral.ai/v1/chat/completions",
             sttUrl: "https://api.mistral.ai/v1/audio/transcriptions", sttModel: "voxtral-mini-latest",
             defaultModel: "mistral-small-latest",
+            pickModel: [/^mistral-small-latest$/, /^mistral-medium-latest$/, /small/],
             models: ["mistral-small-latest", "mistral-medium-latest", "pixtral-large-latest"],
             keyUrl: "console.mistral.ai", keyHint: "",
             vision: true, audio: true,
@@ -2440,8 +2442,10 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             url: "https://api.groq.com/openai/v1/chat/completions",
             sttUrl: "https://api.groq.com/openai/v1/audio/transcriptions", sttModel: "whisper-large-v3-turbo",
             maxImages: 3,
-            defaultModel: "qwen/qwen3.6-27b",   // texte + photos (les modèles Llama ont été retirés par Groq en 2026)
-            models: ["qwen/qwen3.6-27b", "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"],
+            defaultModel: "qwen/qwen3.8-27b",   // texte + photos (Qwen 3.6 n'est plus accessible à tous les comptes)
+            backupModels: ["qwen/qwen3.6-27b"],
+            pickModel: [/qwen.*27b/i, /gpt-oss-120b/i, /gpt-oss/i],   // si rien ne marche : choisi dans la liste réelle de la clé
+            models: ["qwen/qwen3.8-27b", "qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"],
             keyUrl: "console.groq.com/keys", keyHint: "gsk_...",
             vision: true, audio: true,
             info: "Gratuit et ultra rapide. Photos ✅ (modèle Qwen par défaut) Vocal ✅"
@@ -2468,7 +2472,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         });
         if (appData.apiKey) appData.apiKey = sanitizeKey(appData.apiKey);
         // Modèles retirés par Groq en 2026 → on revient au modèle par défaut
-        if (/^(meta-llama\/llama-4|llama-3\.|llama3-|qwen\/qwen3-32b)/.test(appData.aiModels.groq || '')) delete appData.aiModels.groq;
+        if (/^(meta-llama\/llama-4|llama-3\.|llama3-|qwen\/qwen3-32b|qwen\/qwen3\.6-27b)/.test(appData.aiModels.groq || '')) delete appData.aiModels.groq;
         if (/^(gpt-3\.5|gpt-4-|gpt-4$|gpt-4-turbo|o1|o3-mini|o4-mini)/.test(appData.aiModels.openai || '')) delete appData.aiModels.openai;
         if (!appData.apiKeyBackups || typeof appData.apiKeyBackups !== 'object') appData.apiKeyBackups = {};
         Object.keys(appData.apiKeyBackups).forEach(id => {
@@ -2668,7 +2672,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             if (modelGone) {
                 const tried = (callProvider._triedModels = callProvider._triedModels || {});
                 (tried[id] = tried[id] || new Set()).add(model);
-                const next = [P.defaultModel, ...(P.backupModels || [])].find(m => !tried[id].has(m));
+                let next = [P.defaultModel, ...(P.backupModels || [])].find(m => !tried[id].has(m));
+                if (!next && P.pickModel) next = await discoverModel(id, key, tried[id]);
                 if (next) {
                     console.warn(`[IA] ${P.name} : modèle ${model} indisponible pour cette clé → ${next}`);
                     try {
@@ -2736,6 +2741,27 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
         catch (e) { if (e.name === 'AbortError') { const err = new Error("Pas de réponse après " + Math.round(ms/1000) + " s (serveur lent ou saturé)."); err.status = 504; throw err; } throw e; }
         finally { clearTimeout(timer); }
+    }
+
+    // Demande au fournisseur la liste des modèles accessibles avec CETTE clé et choisit le meilleur
+    async function discoverModel(id, key, exclude) {
+        const P = AI_PROVIDERS[id];
+        window._modelListCache = window._modelListCache || {};
+        const ck = id + '|' + key;
+        try {
+            if (!window._modelListCache[ck]) {
+                const r = await fetchWithTimeout(P.url.replace(/chat\/completions$/, 'models'), { headers: { 'Authorization': `Bearer ${key}` } }, 15000);
+                const d = await readJsonSafe(r);
+                window._modelListCache[ck] = r.ok ? (d.data || []).map(m => m.id).filter(Boolean) : [];
+            }
+            const ids = window._modelListCache[ck].filter(m => !exclude.has(m) && !/whisper|tts|guard|embed|moderation|audio|realtime|image|transcribe|search/i.test(m));
+            const ver = m => parseFloat((m.match(/(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+            for (const re of P.pickModel) {
+                const hit = ids.filter(m => re.test(m)).sort((a, b) => ver(b) - ver(a))[0];
+                if (hit) { console.warn(`[IA] ${P.name} : modèle trouvé automatiquement → ${hit}`); return hit; }
+            }
+        } catch (e) {}
+        return null;
     }
 
     // Retire le "raisonnement" que certains modèles écrivent avant la réponse
@@ -2877,6 +2903,16 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         let warning = '';
         if (key && detected && detected !== selectedId) {
             warning = `Cette clé ressemble à une clé ${AI_PROVIDERS[detected].name}, pas ${AI_PROVIDERS[selectedId].name}.`;
+        } else if (key && selectedId !== 'gemini') {
+            const rules = {
+                openai:     [/^sk-/, 40, "commence par « sk- » et fait en général plus de 100 caractères"],
+                anthropic:  [/^sk-ant-/, 60, "commence par « sk-ant- »"],
+                groq:       [/^gsk_/, 50, "commence par « gsk_ » et fait 56 caractères"],
+                openrouter: [/^sk-or-/, 40, "commence par « sk-or- »"],
+                mistral:    [/^[A-Za-z0-9]{20,}$/, 20, "fait environ 32 caractères (lettres et chiffres)"]
+            }[selectedId];
+            if (rules && (!rules[0].test(key) || key.length < rules[1]))
+                warning = `Clé incomplète ou mal copiée (${key.length} caractères) : une clé ${AI_PROVIDERS[selectedId].name} ${rules[2]}.`;
         } else if (selectedId === 'gemini' && key) {
             if (/^AIza/.test(key) && !/^AIza[0-9A-Za-z_-]{35}$/.test(key))
                 warning = `Une ancienne clé Gemini (AIza…) fait 39 caractères (ici : ${key.length}) : elle est peut-être incomplète.`;
@@ -3144,7 +3180,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             showAlert("✅ Clé valide", `${AI_PROVIDERS[id].name} (${mo[id]})\n💬 Texte : OK (${tText} s)${photoLine}\n\nRéponse : ${r.trim().slice(0, 40)} — N'oublie pas d'enregistrer.`);
         } catch (e) {
             const msg = explainAIError(e.message, e.status);
-            showAlert("❌ Échec du test", `${msg}\n\nClé testée : ${maskKey(key)} (${key.length} caractères)${e.raw && e.raw !== msg ? '\nDétail : ' + String(e.raw).slice(0, 120) : ''}`);
+            showAlert("❌ Échec du test", `${c.warning ? '⚠️ ' + c.warning + '\n\n' : ''}${msg}\n\nClé testée : ${maskKey(key)} (${key.length} caractères)${e.raw && e.raw !== msg ? '\nDétail : ' + String(e.raw).slice(0, 120) : ''}`);
         } finally {
             delete ko[id]; delete mo[id];
         }

@@ -1496,7 +1496,9 @@
                 <input type="text" id="api-key-in" class="key-masked" placeholder="Colle ta clé ici..."
                        autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
                        data-1p-ignore data-lpignore="true" data-form-type="other" enterkeyhint="done"
-                       style="padding-right:48px;margin-bottom:4px;font-family:ui-monospace,Menlo,monospace;font-size:14px">
+                       style="padding-right:86px;margin-bottom:4px;font-family:ui-monospace,Menlo,monospace;font-size:14px">
+                <button type="button" onclick="clearKeyField()" id="api-key-clear" aria-label="Vider le champ"
+                        style="position:absolute;right:44px;top:6px;width:38px;height:38px;padding:0;margin:0;background:transparent;border:none;font-size:17px;box-shadow:none;color:var(--text-muted)">✕</button>
                 <button type="button" onclick="toggleKeyVisibility()" id="api-key-eye" aria-label="Afficher la clé"
                         style="position:absolute;right:6px;top:6px;width:38px;height:38px;padding:0;margin:0;background:transparent;border:none;font-size:18px;box-shadow:none">👁️</button>
             </div>
@@ -1518,7 +1520,7 @@
         </div>
         <div class="card">
             <h3>🔢 Ordre de priorité</h3>
-            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0;line-height:1.4">L'IA n°1 est utilisée en premier. Si elle échoue (quota, saturation, clé refusée), l'appli essaie ses clés de secours, puis l'IA suivante, et ainsi de suite. Nécessite « Basculer sur une autre IA si erreur ».</p>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0;line-height:1.4">🗑️ supprime une clé (appuie 2 fois pour confirmer). L'IA n°1 est utilisée en premier. Si elle échoue (quota, saturation, clé refusée), l'appli essaie ses clés de secours, puis l'IA suivante, et ainsi de suite. Nécessite « Basculer sur une autre IA si erreur ».</p>
             <div id="ai-priority-list"></div>
         </div>
         <div class="card">
@@ -3081,9 +3083,29 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         if (!c.detected || c.detected === document.getElementById('ai-provider-sel').value) showToast(`Clé ${AI_PROVIDERS[id].name} enregistrée 🔑`);
     }
 
+    function clearKeyField() {
+        const input = document.getElementById('api-key-in');
+        input.value = ''; updateKeyCheck(); input.focus();
+    }
+
     function deleteApiKey() {
         const id = document.getElementById('ai-provider-sel').value;
-        if (!appData.apiKeys[id]) return showToast("Aucune clé pour ce fournisseur");
+        const typed = sanitizeKey(document.getElementById('api-key-in').value);
+        const saved = getProviderKeys(id);
+        // Clé collée/testée mais jamais enregistrée → il suffit de vider le champ
+        if (typed && !saved.includes(typed)) {
+            clearKeyField();
+            return showToast("Champ vidé — cette clé n'était pas enregistrée");
+        }
+        if (!appData.apiKeys[id]) { clearKeyField(); return showToast("Aucune clé enregistrée pour ce fournisseur"); }
+        // Si le champ montre une clé de secours, c'est elle qu'on supprime
+        const bIdx = ((appData.apiKeyBackups || {})[id] || []).indexOf(typed);
+        if (bIdx >= 0) return removeBackupKey(id, bIdx);
+        if (window._mainDel !== id) {
+            window._mainDel = id; setTimeout(() => { window._mainDel = null; }, 3000);
+            return showToast(`Appuie encore pour supprimer la clé ${AI_PROVIDERS[id].name} ${maskKey(appData.apiKeys[id])}`);
+        }
+        window._mainDel = null;
         delete appData.apiKeys[id];
         const backups = (appData.apiKeyBackups || {})[id] || [];
         if (backups.length) {
@@ -3099,7 +3121,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         }
         saveData();
         renderAISettings();
-        showToast("Clé supprimée 🗑️");
+        document.getElementById('ai-provider-sel').value = id; fillAIProviderFields(id);
+        if (!getProviderKeys(id).length || !backups) showToast("Clé supprimée 🗑️");
     }
 
     function addBackupKey() {
@@ -3128,6 +3151,12 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         list.splice(i, 1); if (!list.length) delete appData.apiKeyBackups[id];
         appData.keysUpdatedAt = Date.now();
         saveData(); renderAIPriority(); showToast("Clé de secours supprimée 🗑️");
+    }
+
+    function removeMainKey(id) {
+        document.getElementById('ai-provider-sel').value = id;
+        fillAIProviderFields(id);                  // le champ affiche la clé principale → deleteApiKey la supprime
+        deleteApiKey();
     }
 
     function moveAIPriority(id, dir) {
@@ -3159,6 +3188,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
                         <div style="font-size:0.72rem;color:var(--text-muted)"><code>${escHtml(maskKey(appData.apiKeys[id]))}</code>${backups.length ? ` + ${backups.length} secours` : ''}</div></div>
                     <button class="outline" style="${btn}" ${i === 0 ? 'disabled' : ''} onclick="moveAIPriority('${id}',-1)" aria-label="Monter">↑</button>
                     <button class="outline" style="${btn}" ${i === order.length - 1 ? 'disabled' : ''} onclick="moveAIPriority('${id}',1)" aria-label="Descendre">↓</button>
+                    <button class="outline" style="${btn}" onclick="removeMainKey('${id}')" aria-label="Supprimer la clé">🗑️</button>
                 </div>${rows}</div>`;
         }).join('');
     }
@@ -3212,7 +3242,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
             showAlert("✅ Clé valide", `${AI_PROVIDERS[id].name} (${mo[id]})\n💬 Texte : OK (${tText} s)${photoLine}\n\nRéponse : ${r.trim().slice(0, 40)} — N'oublie pas d'enregistrer.`);
         } catch (e) {
             const msg = explainAIError(e.message, e.status);
-            showAlert("❌ Échec du test", `${c.warning ? '⚠️ ' + c.warning + '\n\n' : ''}${msg}\n\nClé testée : ${maskKey(key)} (${key.length} caractères)${e.raw && e.raw !== msg ? '\nDétail : ' + String(e.raw).slice(0, 120) : ''}`);
+            const notSaved = !getProviderKeys(id).includes(key);
+            showAlert("❌ Échec du test", `${c.warning ? '⚠️ ' + c.warning + '\n\n' : ''}${msg}${notSaved ? "\n\n👉 Cette clé n'est pas enregistrée : appuie sur ✕ dans le champ pour l'effacer." : ''}\n\nClé testée : ${maskKey(key)} (${key.length} caractères)${e.raw && e.raw !== msg ? '\nDétail : ' + String(e.raw).slice(0, 120) : ''}`);
         } finally {
             delete ko[id]; delete mo[id];
         }

@@ -1308,7 +1308,7 @@
         </div>
         <div id="home-alex-tip" style="display:none;margin-bottom:14px">
             <div style="display:flex;gap:10px;background:var(--primary-light);border-radius:16px;padding:13px 15px;border:1px solid rgba(193,95,60,0.15)">
-                <div style="flex-shrink:0;font-size:0.7rem;font-weight:800;color:var(--primary);padding-top:2px;letter-spacing:0.5px">✦ Alex</div>
+                <div style="flex-shrink:0;font-size:0.7rem;font-weight:800;color:var(--primary);padding-top:2px;letter-spacing:0.5px">✦ Jego</div>
                 <div id="home-alex-tip-text" style="font-size:0.87rem;font-weight:600;color:var(--text-color);line-height:1.6;flex:1;font-style:italic"></div>
             </div>
         </div>
@@ -1370,12 +1370,12 @@
                 <div id="chk-bilan-icon" style="width:26px;height:26px;border-radius:8px;border:2px solid var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;font-size:1rem"></div>
                 <div><div style="font-weight:800">Clôturer la journée</div><div style="font-size:0.78rem;color:var(--text-muted)">Analyse IA + sauvegarde cloud ☁️</div></div>
             </div>
-            <div id="loader-bilan" class="loader">🧠 Alex analyse ta journée...</div>
+            <div id="loader-bilan" class="loader">🧠 Jego analyse ta journée...</div>
             <div id="bilan-text" style="display:none;margin-top:12px">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
                     <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">🏋🏼</div>
                     <div>
-                        <div style="font-weight:900;font-size:0.82rem">Alex — Ton coach</div>
+                        <div style="font-weight:900;font-size:0.82rem">Jego — Ton coach</div>
                         <div style="font-size:0.7rem;color:var(--text-muted);font-weight:600">Bilan du jour</div>
                     </div>
                 </div>
@@ -1548,7 +1548,7 @@
                         <div id="meal-health-label" style="font-size:0.82rem;color:var(--text-muted);font-weight:600"></div>
                     </div>
                 </div>
-                <!-- Bulle coach Alex -->
+                <!-- Bulle coach Jego -->
                 <div id="meal-coach-comment" style="display:none;align-items:flex-start;gap:10px;background:var(--primary-light);border-radius:14px;padding:11px 13px;margin-bottom:12px;border:1.5px solid rgba(193,95,60,0.25)">
                     <div style="font-size:1.3rem;flex-shrink:0;line-height:1.2">🏋🏼</div>
                     <div class="mcc-text" style="font-size:0.88rem;font-weight:700;color:var(--text-color);line-height:1.5"></div>
@@ -1686,7 +1686,7 @@
         </div>
         <div class="card">
             <h3>🤖 Intelligence artificielle</h3>
-            <p style="font-size:0.82rem;color:var(--text-muted);margin-top:0">Choisis l'IA utilisée par l'app (repas, sport, recettes, coach Alex). Tu peux enregistrer une clé pour chaque fournisseur.</p>
+            <p style="font-size:0.82rem;color:var(--text-muted);margin-top:0">Choisis l'IA utilisée par l'app (repas, sport, recettes, coach Jego). Tu peux enregistrer une clé pour chaque fournisseur.</p>
             <div id="ai-provider-badges" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px"></div>
             <label>Fournisseur à configurer</label>
             <select id="ai-provider-sel" onchange="onAIProviderChange()"></select>
@@ -1786,7 +1786,7 @@
             <div class="coach-chat-header-info">
                 <div class="coach-avatar">🏋🏼</div>
                 <div>
-                    <div class="coach-chat-name">Alex</div>
+                    <div class="coach-chat-name">Jego</div>
                     <div class="coach-chat-status">
                         <div class="coach-status-dot"></div>
                         Disponible · Sport & Nutrition
@@ -2399,7 +2399,7 @@
                 ? 'Il y a eu des excès aujourd\'hui — sois direct et constructif, pas moralisateur.'
                 : 'Bonne journée — sois positif et exigeant pour pousser à progresser.';
 
-        const prompt = `Tu es Alex, coach nutrition et sport personnel. Fais le bilan de cette journée de façon PERSONNALISÉE, HUMAINE, et ANCRÉE dans les vraies données.
+        const prompt = `Tu es Jego, coach nutrition et sport personnel. Fais le bilan de cette journée de façon PERSONNALISÉE, HUMAINE, et ANCRÉE dans les vraies données.
 
 ${fullContext}
 
@@ -3960,7 +3960,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
             const emoji = isOver ? '😞' : '😊';
             document.getElementById('meal-health-emoji').textContent = emoji;
             document.getElementById('meal-health-label').textContent = res.healthLabel || '';
-            // Bulle coachComment style "Alex parle"
+            // Bulle coachComment style "Jego parle"
             const coachCommentEl = document.getElementById('meal-coach-comment');
             if (coachCommentEl) {
                 if (res.coachComment) {
@@ -4179,7 +4179,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
             else subtitleEl.textContent = "Soirée tranquille — tu l'as mérité 🌙";
         }
 
-        // Alex tip — contextuel selon la journée en cours
+        // Jego tip — contextuel selon la journée en cours
         const alexTipEl = document.getElementById('home-alex-tip');
         const alexTipText = document.getElementById('home-alex-tip-text');
         if (alexTipEl && alexTipText) {
@@ -4225,7 +4225,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
             } else if (h < 10) {
                 tip = `Bonne matinée ${name} ! Démarre bien avec un petit-déjeuner équilibré ☀️`;
             } else if (h >= 21) {
-                tip = `En forme pour demain ? Clôture ta journée pour obtenir l'analyse d'Alex 🌙`;
+                tip = `En forme pour demain ? Clôture ta journée pour obtenir l'analyse de Jego 🌙`;
             } else {
                 tip = `Continue comme ça ${name} — ${mealCount} repas enregistré${mealCount > 1 ? 's' : ''}, tu es sur la bonne voie ✦`;
             }
@@ -4291,7 +4291,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
                     ${tipsHtml ? `
                     <div style="margin-top:6px;border-top:1px solid rgba(128,128,128,0.12);padding-top:6px;display:flex;align-items:center;justify-content:space-between"
                         onclick="event.stopPropagation();const d=this.nextElementSibling;const arr=this.querySelector('.tip-arrow');const open=d.style.display==='block';d.style.display=open?'none':'block';arr.style.transform=open?'rotate(0deg)':'rotate(180deg)'">
-                        <span style="font-size:0.72rem;font-weight:700;color:var(--primary)">💡 Conseils Alex</span>
+                        <span style="font-size:0.72rem;font-weight:700;color:var(--primary)">💡 Conseils Jego</span>
                         <svg class="tip-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round" style="transition:transform 0.2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
                     </div>
                     <div style="display:none;margin-top:6px">${tipsHtml}</div>` : ''}`;
@@ -4617,7 +4617,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
         }
 
         // ── 6. Loader IA + bloc cap pour la suite ──
-        const loaderHtml = `<div id="weekly-ai-loader" style="text-align:center;padding:14px;color:var(--secondary);font-style:italic;font-size:0.85rem;animation:pulse 1.4s infinite">🧠 Alex prépare ton cap pour la semaine prochaine...</div>`;
+        const loaderHtml = `<div id="weekly-ai-loader" style="text-align:center;padding:14px;color:var(--secondary);font-style:italic;font-size:0.85rem;animation:pulse 1.4s infinite">🧠 Jego prépare ton cap pour la semaine prochaine...</div>`;
         const aiBlock = `<div id="weekly-ai-content" style="display:none"></div>`;
 
         // ── Assemblage final ──
@@ -4651,7 +4651,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
                     : `Maintien parfait sur la semaine`;
 
             const fullContext = buildAlexContext7Days(getTodayStr());
-            const prompt = `Tu es Alex, coach nutrition et sport personnel. Fais le bilan HEBDOMADAIRE pour un utilisateur en ${goalLabel}.
+            const prompt = `Tu es Jego, coach nutrition et sport personnel. Fais le bilan HEBDOMADAIRE pour un utilisateur en ${goalLabel}.
 
 ${fullContext}
 
@@ -4680,7 +4680,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
                 <div style="font-size:0.62rem;font-weight:800;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;margin:0 0 8px 4px">Cap pour la suite</div>
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                     <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0">🏋🏼</div>
-                    <div><div style="font-weight:900;font-size:0.78rem">Alex — Synthèse hebdo</div><div style="font-size:0.66rem;color:var(--text-muted);font-weight:600">Long terme · perte de poids</div></div>
+                    <div><div style="font-weight:900;font-size:0.78rem">Jego — Synthèse hebdo</div><div style="font-size:0.66rem;color:var(--text-muted);font-weight:600">Long terme · perte de poids</div></div>
                 </div>
                 <div style="background:var(--primary-light);border-radius:0 14px 14px 14px;padding:13px 15px;font-size:0.86rem;font-weight:600;line-height:1.7;color:var(--text-color);white-space:pre-wrap;border:1.5px solid rgba(193,95,60,0.2)">${txt}</div>`;
             }
@@ -5326,7 +5326,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
         return Math.round(steps * weightKg * 0.0005);
     }
 
-    // ── Contexte 7 jours complet — utilisé partout par Alex ──
+    // ── Contexte 7 jours complet — utilisé partout par Jego ──
     function buildAlexContext7Days(anchorDate) {
         const p = appData.profile;
         if (!p) return "L'utilisateur n'a pas encore configuré son profil.";
@@ -5560,7 +5560,7 @@ MOYENNES SEMAINE : ${avgCal > 0 ? `${avgCal} kcal/j mangées` : ''} | ${avgProt 
             .map(m => `${m.role === 'user' ? 'Utilisateur' : 'Coach'}: ${m.content}`)
             .join('\n');
 
-        const fullPrompt = `Tu es Alex, un coach sportif et nutritionnel personnel intégré dans l'app NUTRI+. Tu es décontracté, fun, bienveillant et motivant 😎. Tu tutoies l'utilisateur, tu utilises des emojis avec parcimonie (1-2 max par réponse), et tu donnes des conseils pratiques et personnalisés BASÉS SUR SES VRAIES DONNÉES.
+        const fullPrompt = `Tu es Jego, un coach sportif et nutritionnel personnel intégré dans l'app NUTRI+. Tu es décontracté, fun, bienveillant et motivant 😎. Tu tutoies l'utilisateur, tu utilises des emojis avec parcimonie (1-2 max par réponse), et tu donnes des conseils pratiques et personnalisés BASÉS SUR SES VRAIES DONNÉES.
 
 DONNÉES UTILISATEUR:
 ${systemContext}

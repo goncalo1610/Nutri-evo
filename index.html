@@ -125,6 +125,17 @@
         @keyframes popIn { from{transform:scale(0.85);opacity:0} to{transform:scale(1);opacity:1} }
         .modal-box h3 { margin:0 0 8px 0; }
         .modal-box p { color:var(--text-muted); font-size:0.9rem; margin-bottom:16px; }
+        .settings-btn { width:44px; height:44px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:50%;
+            background:var(--primary-light); color:var(--primary); border:1.5px solid var(--primary); box-shadow:0 2px 8px rgba(0,0,0,0.12); }
+        .settings-btn:active { transform:scale(0.92); }
+        .back-btn { left:0; top:50%; margin-top:-22px; }
+        .back-btn svg { margin-left:-2px; }
+        .settings-btn.pulse { animation:settingsPulse 1.6s ease-in-out 4; }
+        @keyframes settingsPulse { 0%,100% { box-shadow:0 0 0 0 rgba(193,95,60,0.55); } 50% { box-shadow:0 0 0 10px rgba(193,95,60,0); } }
+        .settings-hint { position:fixed; top:calc(env(safe-area-inset-top, 0px) + 62px); right:10px; z-index:900; max-width:230px;
+            background:var(--primary); color:#fff; font-size:0.8rem; font-weight:800; padding:9px 12px; border-radius:14px;
+            box-shadow:0 6px 18px rgba(0,0,0,0.25); cursor:pointer; line-height:1.35; }
+        .settings-hint::before { content:''; position:absolute; top:-7px; right:18px; border:7px solid transparent; border-top:0; border-bottom-color:var(--primary); }
         .shortcuts-container { display:flex; overflow-x:auto; gap:8px; padding:5px 0 14px 0; scrollbar-width:none; }
         .shortcuts-container::-webkit-scrollbar { display:none; }
         .shortcut-item { flex:0 0 auto; background:var(--primary-light); padding:8px 12px; border-radius:20px; border:1.5px solid var(--primary); color:var(--primary); font-size:0.8rem; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:5px; transition:transform 0.15s; }
@@ -783,8 +794,8 @@
 <div id="app-container">
     <header>
         <div style="position:relative;min-width:44px;height:40px;display:flex;align-items:center;gap:6px">
-            <button class="header-btn" id="btn-back" style="visibility:hidden;position:absolute" onclick="goBack()">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+            <button class="header-btn settings-btn back-btn" id="btn-back" style="visibility:hidden;position:absolute" onclick="goBack()" aria-label="Retour" title="Retour">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
             </button>
             <div id="header-avatar" onclick="showSection('view-settings')" style="cursor:pointer"></div>
             <!-- Gardé pour compatibilité JS - caché -->
@@ -799,11 +810,12 @@
         </div>
         <div style="display:flex;align-items:center;gap:8px">
             <span id="cloud-status" class="cloud-badge synced" style="padding:3px 7px;font-size:0.58rem">☁️</span>
-            <button class="header-btn" onclick="showSection('view-settings')" style="color:var(--text-muted);width:40px;height:40px;display:flex;align-items:center;justify-content:center">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            <button class="header-btn settings-btn" id="btn-settings" onclick="dismissSettingsHint();showSection('view-settings')" aria-label="Réglages" title="Réglages">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             </button>
         </div>
     </header>
+    <div id="settings-hint" class="settings-hint" style="display:none" onclick="dismissSettingsHint()">⚙️ Tes réglages (profil, clés IA…) sont ici <span style="opacity:.7;margin-left:6px">✕</span></div>
 
     <div id="toast" class="toast"></div>
 
@@ -1694,7 +1706,14 @@
         if (!auth) return alert("Firebase non disponible.");
         const provider = new GoogleAuthProvider();
         try { await signInWithPopup(auth, provider); }
-        catch(e) { alert("Erreur de connexion : " + e.message); }
+        catch(e) {
+            const code = e.code || '';
+            const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            if (/popup-closed-by-user|cancelled-popup-request/.test(code)) return;
+            if (ios && /popup-blocked|web-storage-unsupported|network-request-failed|internal-error|missing-initial-state/.test(code))
+                return alert("Connexion bloquée par l'iPhone.\n\n1. Réglages → Safari : désactive « Bloquer les fenêtres surgissantes ».\n2. Réglages → Safari → Confidentialité : désactive « Empêcher le suivi intersite » le temps de te connecter.\n3. Réessaie.\n\n(Code : " + code + ")");
+            alert("Erreur de connexion : " + (e.message || code));
+        }
     };
 
     window.signOutUser = async function() {
@@ -2112,9 +2131,18 @@
             // Ne pas ramener à l'accueil si l'utilisateur a déjà ouvert une autre page
             // (ex : clic sur ⚙️ pendant le chargement)
             const _cur = document.querySelector('.view-section.active');
-            if (!_cur || _cur.id === 'view-home') {
+            // Après une actualisation, on reste sur la page où l'on était (le navigateur garde history.state)
+            const RESTORABLE = ['view-settings','view-training','view-day','view-menu','view-tool-poids','view-tool-complements','view-tool-historique','view-tool-scan','view-tool-recette'];
+            let _prev = history.state && history.state.section;
+            if (_prev === 'view-meal-form') _prev = 'view-day';   // formulaire en cours → liste des repas
+            if (!_cur && _prev && RESTORABLE.includes(_prev) && document.getElementById(_prev)) {
+                _renderSection(_prev);
+                if (_prev === 'view-tool-historique' && typeof renderHistoriqueFull === 'function') renderHistoriqueFull();
+                navHistory.push('view-home');       // le bouton retour ramène à l'accueil
+            } else if (!_cur || _cur.id === 'view-home') {
                 _renderSection('view-home');
                 history.replaceState({ section: 'view-home' }, '', '');
+                setTimeout(showSettingsHint, 1200);
             } else if (navHistory.length === 0) {
                 // Page ouverte avant la fin du chargement : on met l'accueil derrière pour que "retour" y ramène
                 history.replaceState({ section: 'view-home' }, '', '');
@@ -2127,7 +2155,11 @@
     }
 
     function saveData() {
-        localStorage.setItem('nutri_v5_pro_complete', JSON.stringify(appData));
+        try { localStorage.setItem('nutri_v5_pro_complete', JSON.stringify(appData)); }
+        catch (e) {
+            console.error('Stockage local plein', e);
+            if (!window._storageWarned) { window._storageWarned = true; showAlert("Mémoire du téléphone pleine", "L'appli n'arrive plus à enregistrer sur ce téléphone. Connecte-toi (☁️ Sync) pour que tes données restent sauvegardées dans le cloud."); }
+        }
         if (window.saveToFirebase) window.saveToFirebase(appData);
     }
 
@@ -3896,7 +3928,7 @@ JSON: {"kcal":number,"prot":number,"carb":number,"fat":number,"fiber":number,"he
 
             if (hasAiSummary) {
                 // Journée clôturée → bilan IA
-                const sentences = day.aiSummary.split(/(?<=[.!])/).filter(s => s.trim().length > 20);
+                const sentences = (day.aiSummary.match(/[^.!]+[.!]?/g) || []).filter(s => s.trim().length > 20);   // compatible anciens iPhone
                 tip = sentences[0]?.trim() || day.aiSummary.substring(0, 120) + '…';
             } else if (mealCount === 0) {
                 // Rien de saisi
@@ -4454,7 +4486,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
 
     function goBack(){
         // Utiliser history.back() — le popstate gérera le rendu
-        if(navHistory.length > 0){
+        if(navHistory.length > 0 && history.length > 1){
             history.back();
         } else {
             history.pushState({ section: 'view-home' }, '', '');
@@ -4473,6 +4505,22 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
     function resetApp(){if(!window._resetConfirm){window._resetConfirm=true;showAlert("⚠️ Attention","Clique encore une fois sur Reset pour confirmer la suppression de toutes tes données.");setTimeout(()=>{window._resetConfirm=false;},5000);return;}localStorage.clear();location.reload();}
     function showAlert(t,m){document.getElementById('alert-title').textContent=t;document.getElementById('alert-msg').textContent=m;document.getElementById('modal-alert').style.display='flex';}
     function closeAlert(){document.getElementById('modal-alert').style.display='none';}
+    function showSettingsHint(){
+        try {
+            const n = parseInt(localStorage.getItem('settings_hint_count') || '0', 10);
+            if (n >= 3 || localStorage.getItem('settings_hint_done')) return;
+            localStorage.setItem('settings_hint_count', String(n + 1));
+        } catch (e) { return; }
+        const btn = document.getElementById('btn-settings'), hint = document.getElementById('settings-hint');
+        if (!btn || !hint) return;
+        btn.classList.add('pulse'); hint.style.display = 'block';
+        setTimeout(() => { hint.style.display = 'none'; btn.classList.remove('pulse'); }, 7000);
+    }
+    function dismissSettingsHint(){
+        try { localStorage.setItem('settings_hint_done', '1'); } catch (e) {}
+        const hint = document.getElementById('settings-hint'); if (hint) hint.style.display = 'none';
+        const btn = document.getElementById('btn-settings'); if (btn) btn.classList.remove('pulse');
+    }
     function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 
     if ('serviceWorker' in navigator) {
@@ -4533,15 +4581,18 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
     async function initNotifications(reg) {
         if (!('Notification' in window)) return;
         if (Notification.permission === 'default') {
-            setTimeout(() => requestNotifPermission(reg), 3000);
+            // iPhone : la demande doit suivre un appui de l'utilisateur (sinon elle est ignorée)
+            const ask = () => { document.removeEventListener('click', ask, true); requestNotifPermission(reg); };
+            document.addEventListener('click', ask, true);
         } else if (Notification.permission === 'granted') {
             scheduleNotifications(reg);
         }
     }
 
     async function requestNotifPermission(reg) {
-        if (Notification.permission !== 'default') return;
-        const permission = await Notification.requestPermission();
+        if (!('Notification' in window) || Notification.permission !== 'default') return;
+        let permission;
+        try { permission = await Notification.requestPermission(); } catch (e) { return; }
         if (permission === 'granted') {
             scheduleNotifications(reg);
             showToast("🔔 Notifications activées !");
@@ -4549,7 +4600,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
     }
 
     function scheduleNotifications(reg) {
-        if (!reg || Notification.permission !== 'granted') return;
+        if (!reg || !('Notification' in window) || Notification.permission !== 'granted') return;
         if (window._notifTimers) window._notifTimers.forEach(t => clearTimeout(t));
         window._notifTimers = [];
         const now = new Date();
@@ -4629,7 +4680,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
     }
 
     function sendNotification(reg, options) {
-        if (!reg || Notification.permission !== 'granted') return;
+        if (!reg || !('Notification' in window) || Notification.permission !== 'granted') return;
         try {
             if (reg.active) {
                 reg.showNotification(options.title, {

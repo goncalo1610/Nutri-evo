@@ -280,7 +280,7 @@
         .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; min-width:0; }
         .grid-2 > * { min-width:0; }
         .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-        .toast { position:fixed; bottom:calc(var(--nav-height) + 20px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%) translateY(20px); background:#292524; color:#F5F5F4; padding:10px 20px; border-radius:20px; font-size:0.85rem; font-weight:700; z-index:999; opacity:0; transition:all 0.3s; pointer-events:none; white-space:nowrap; }
+        .toast { position:fixed; bottom:calc(var(--nav-height) + 20px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%) translateY(20px); background:#292524; color:#F5F5F4; padding:10px 20px; border-radius:20px; font-size:0.85rem; font-weight:700; z-index:999; opacity:0; transition:all 0.3s; pointer-events:none; white-space:normal; width:max-content; max-width:calc(100% - 32px); text-align:center; line-height:1.35; }
         body.dark-mode .toast { background:#E7E5E4; color:#1C1917; }
         .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
         #splash-screen {
@@ -1516,7 +1516,7 @@
             </div>
             <button class="outline" onclick="addBackupKey()" style="margin-top:8px;padding:8px;font-size:0.8rem">➕ Ajouter comme clé de secours</button>
             <div id="ai-backup-info" style="font-size:0.74rem;color:var(--text-muted);font-weight:700;margin-top:4px;text-align:center"></div>
-            <button class="outline" onclick="deleteApiKey()" style="margin-top:8px;padding:8px;font-size:0.8rem">🗑️ Supprimer la clé principale de ce fournisseur</button>
+            <button class="outline" id="btn-del-main" onclick="deleteApiKey()" style="margin-top:8px;padding:8px;font-size:0.8rem">🗑️ Supprimer la clé principale de ce fournisseur</button>
         </div>
         <div class="card">
             <h3>🔢 Ordre de priorité</h3>
@@ -3067,6 +3067,11 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const key = c.key;
         let model = document.getElementById('ai-model-in').value.trim();
         if (!key) return showAlert("Clé manquante", `Colle ta clé ${AI_PROVIDERS[id].name} avant d'enregistrer.`);
+        if (c.warning && /incomplète|mal copiée|trop courte/i.test(c.warning) && window._saveAnyway !== key) {
+            window._saveAnyway = key; setTimeout(() => { window._saveAnyway = null; }, 6000);
+            return showAlert("⚠️ Clé sûrement incomplète", c.warning + "\n\nElle risque de ne pas fonctionner. Recopie-la en entier avec le bouton « Copy » du site, ou appuie à nouveau sur Enregistrer pour la garder quand même.");
+        }
+        window._saveAnyway = null;
         if (c.detected && c.detected !== id) {
             showToast(`Clé ${AI_PROVIDERS[c.detected].name} détectée → enregistrée chez ${AI_PROVIDERS[c.detected].name}`);
             id = c.detected; model = '';
@@ -3102,10 +3107,15 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         const bIdx = ((appData.apiKeyBackups || {})[id] || []).indexOf(typed);
         if (bIdx >= 0) return removeBackupKey(id, bIdx);
         if (window._mainDel !== id) {
-            window._mainDel = id; setTimeout(() => { window._mainDel = null; }, 3000);
-            return showToast(`Appuie encore pour supprimer la clé ${AI_PROVIDERS[id].name} ${maskKey(appData.apiKeys[id])}`);
+            window._mainDel = id;
+            const btns = [document.getElementById('btn-del-main'), window._delBtn].filter(Boolean);
+            const old = btns.map(b => [b, b.innerHTML, b.style.cssText]);
+            btns.forEach(b => { b.innerHTML = b.id === 'btn-del-main' ? '⚠️ Appuie encore pour confirmer' : '✓ ?'; b.style.background = 'var(--danger,#d33)'; b.style.color = '#fff'; b.style.borderColor = 'var(--danger,#d33)'; });
+            setTimeout(() => { window._mainDel = null; old.forEach(([b, h, c]) => { if (document.body.contains(b)) { b.innerHTML = h; b.style.cssText = c; } }); }, 3000);
+            window._delBtn = null;
+            return showToast(`Appuie encore pour supprimer la clé ${AI_PROVIDERS[id].name} (${maskKey(appData.apiKeys[id])})`);
         }
-        window._mainDel = null;
+        window._mainDel = null; window._delBtn = null;
         delete appData.apiKeys[id];
         const backups = (appData.apiKeyBackups || {})[id] || [];
         if (backups.length) {
@@ -3153,7 +3163,8 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
         saveData(); renderAIPriority(); showToast("Clé de secours supprimée 🗑️");
     }
 
-    function removeMainKey(id) {
+    function removeMainKey(id, el) {
+        if (el) window._delBtn = el;
         document.getElementById('ai-provider-sel').value = id;
         fillAIProviderFields(id);                  // le champ affiche la clé principale → deleteApiKey la supprime
         deleteApiKey();
@@ -3188,7 +3199,7 @@ Tutoie, sois direct, chaleureux. Cite les vrais chiffres. Jamais de phrases gén
                         <div style="font-size:0.72rem;color:var(--text-muted)"><code>${escHtml(maskKey(appData.apiKeys[id]))}</code>${backups.length ? ` + ${backups.length} secours` : ''}</div></div>
                     <button class="outline" style="${btn}" ${i === 0 ? 'disabled' : ''} onclick="moveAIPriority('${id}',-1)" aria-label="Monter">↑</button>
                     <button class="outline" style="${btn}" ${i === order.length - 1 ? 'disabled' : ''} onclick="moveAIPriority('${id}',1)" aria-label="Descendre">↓</button>
-                    <button class="outline" style="${btn}" onclick="removeMainKey('${id}')" aria-label="Supprimer la clé">🗑️</button>
+                    <button class="outline" style="${btn}" onclick="removeMainKey('${id}', this)" aria-label="Supprimer la clé">🗑️</button>
                 </div>${rows}</div>`;
         }).join('');
     }
@@ -4552,7 +4563,7 @@ Pas de généralités. Pas de morale. Tu es un coach qui suit cette personne dep
         const hint = document.getElementById('settings-hint'); if (hint) hint.style.display = 'none';
         const btn = document.getElementById('btn-settings'); if (btn) btn.classList.remove('pulse');
     }
-    function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+    function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(window._toastT);window._toastT=setTimeout(()=>t.classList.remove('show'),msg.length>60?4000:2500);}
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', async () => {
